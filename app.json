@@ -17,6 +17,7 @@
     },
     "android": {
       "package": "com.jcebridal.mobile",
+      "permissions": ["CAMERA"],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -24,6 +25,20 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       }
     },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow JCE Bridal to access your camera for AR gown try-on."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow JCE Bridal to save AR preview photos to your gallery."
+        }
+      ]
+    ],
     "web": {
       "favicon": "./assets/favicon.png"
     }

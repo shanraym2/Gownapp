@@ -3,6 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 const CART_KEY = "jce_mobile_cart";
 const USER_KEY = "jce_mobile_user";
 const FAVORITES_KEY = "jce_mobile_favorites";
+const AR_FIT_PROFILES_KEY = "jce_mobile_ar_fit_profiles";
 
 export async function loadCart() {
   try {
@@ -45,4 +46,17 @@ export async function loadFavorites() {
 
 export async function saveFavorites(ids) {
   await AsyncStorage.setItem(FAVORITES_KEY, JSON.stringify(ids));
+}
+
+export async function loadArFitProfiles() {
+  try {
+    const raw = await AsyncStorage.getItem(AR_FIT_PROFILES_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+export async function saveArFitProfiles(profiles) {
+  await AsyncStorage.setItem(AR_FIT_PROFILES_KEY, JSON.stringify(profiles));
 }
