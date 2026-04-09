@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { fetchGowns } from "../services/gowns";
 import { clearUser, loadCart, loadFavorites, loadUser, saveCart, saveFavorites, saveUser } from "../utils/storage";
+import { getLastSyncAt, syncUserData } from "../services/sync";
 
 const ShopContext = createContext(null);
 
@@ -10,6 +11,7 @@ export function ShopProvider({ children }) {
   const [cart, setCart] = useState([]);
   const [user, setUser] = useState(null);
   const [favoritesIds, setFavoritesIds] = useState([]);
+  const [lastSyncedAt, setLastSyncedAt] = useState("");
 
   useEffect(() => {
     let mounted = true;
@@ -21,11 +23,13 @@ export function ShopProvider({ children }) {
           loadUser(),
           loadFavorites(),
         ]);
+        const lastSync = await getLastSyncAt();
         if (!mounted) return;
         setGowns(gownsData);
         setCart(cartData);
         setUser(userData);
         setFavoritesIds(favoritesData.map((x) => Number(x)).filter((n) => !Number.isNaN(n)));
+        setLastSyncedAt(lastSync);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -70,6 +74,20 @@ export function ShopProvider({ children }) {
   const logout = async () => {
     setUser(null);
     await clearUser();
+  };
+
+  const syncNow = async () => {
+    if (!user?.email) return { ok: false, reason: "Please sign in first." };
+    const result = await syncUserData({
+      user,
+      cart,
+      favoritesIds,
+      syncedAt: new Date().toISOString(),
+    });
+    if (result?.ok && result?.lastSyncedAt) {
+      setLastSyncedAt(result.lastSyncedAt);
+    }
+    return result;
   };
 
   const cartDetailed = useMemo(() => {
@@ -121,6 +139,8 @@ export function ShopProvider({ children }) {
     clearCart,
     login,
     logout,
+    lastSyncedAt,
+    syncNow,
   };
 
   return <ShopContext.Provider value={value}>{children}</ShopContext.Provider>;

@@ -54,7 +54,8 @@ export async function registerUser({ name, email, password }) {
     return { ok: false, error: "An account with this email already exists." };
   }
   const passwordHash = await sha256(cleanPassword);
-  const user = { id: Date.now(), name: cleanName, email: cleanEmail, passwordHash, role: "customer" };
+  const role = cleanEmail.includes("admin") ? "admin" : "customer";
+  const user = { id: Date.now(), name: cleanName, email: cleanEmail, passwordHash, role };
   const next = [...users, user];
   await saveUsers(next);
   return { ok: true, user };
@@ -81,4 +82,53 @@ export async function resetUserPassword({ email, password }) {
   updated[index] = { ...updated[index], passwordHash: hash };
   await saveUsers(updated);
   return { ok: true, user: updated[index] };
+}
+
+export async function updateUserProfile({ email, name, phone }) {
+  const cleanEmail = normalizeEmail(email);
+  const cleanName = String(name || "").trim().replace(/\s+/g, " ");
+  const cleanPhone = String(phone || "").trim();
+  if (!isRealName(cleanName)) {
+    return { ok: false, error: "Please use a real name (letters/spaces/hyphen/apostrophe only)." };
+  }
+  const users = await loadUsers();
+  const index = users.findIndex((u) => normalizeEmail(u.email) === cleanEmail);
+  if (index < 0) return { ok: false, error: "No account found with this email." };
+  const updated = [...users];
+  updated[index] = { ...updated[index], name: cleanName, phone: cleanPhone };
+  await saveUsers(updated);
+  return { ok: true, user: updated[index] };
+}
+
+export async function changeUserPassword({ email, currentPassword, nextPassword }) {
+  const cleanEmail = normalizeEmail(email);
+  if (!passwordMeetsRules(nextPassword)) {
+    return { ok: false, error: "New password must be at least 8 chars with letters and numbers." };
+  }
+  const users = await loadUsers();
+  const index = users.findIndex((u) => normalizeEmail(u.email) === cleanEmail);
+  if (index < 0) return { ok: false, error: "No account found with this email." };
+  const currentHash = await sha256(currentPassword);
+  if (users[index].passwordHash !== currentHash) {
+    return { ok: false, error: "Current password is incorrect." };
+  }
+  const nextHash = await sha256(nextPassword);
+  const updated = [...users];
+  updated[index] = { ...updated[index], passwordHash: nextHash };
+  await saveUsers(updated);
+  return { ok: true };
+}
+
+export async function deleteUserAccount({ email, password }) {
+  const cleanEmail = normalizeEmail(email);
+  const users = await loadUsers();
+  const index = users.findIndex((u) => normalizeEmail(u.email) === cleanEmail);
+  if (index < 0) return { ok: false, error: "No account found with this email." };
+  const hash = await sha256(password);
+  if (users[index].passwordHash !== hash) {
+    return { ok: false, error: "Password is incorrect." };
+  }
+  const updated = users.filter((u) => normalizeEmail(u.email) !== cleanEmail);
+  await saveUsers(updated);
+  return { ok: true };
 }

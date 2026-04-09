@@ -40,7 +40,7 @@ export function LoginScreen({ navigation }) {
         id: check.user.id,
         name: check.user.name,
         email: check.user.email,
-        role: check.user.role || "customer",
+        role: check.user.role || (String(check.user.email || "").toLowerCase().includes("admin") ? "admin" : "customer"),
       });
       navigation.goBack();
     } catch (e) {

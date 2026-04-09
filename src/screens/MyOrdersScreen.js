@@ -9,6 +9,10 @@ function formatPrice(num) {
   return `P${Number(num || 0).toLocaleString("en-PH")}`;
 }
 
+function statusLabel(status) {
+  return String(status || "placed").replace("_", " ").replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
 export function MyOrdersScreen({ navigation }) {
   const { user } = useShop();
   const [loading, setLoading] = useState(true);
@@ -66,7 +70,18 @@ export function MyOrdersScreen({ navigation }) {
           <Text style={styles.cardTitle}>Order #{o.id}</Text>
           <Text style={styles.meta}>{o.createdAt ? new Date(o.createdAt).toLocaleString() : "-"}</Text>
           <Text style={styles.meta}>Payment method: {o.payment || "-"}</Text>
-          <Text style={styles.total}>Total: {formatPrice(o.subtotal)}</Text>
+          <Text style={styles.meta}>Shipping: {o.shipping?.zoneLabel || "-"}, ETA {o.shipping?.etaLabel || "-"}</Text>
+          <Text style={styles.total}>Total: {formatPrice(o.total || o.subtotal)}</Text>
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>{statusLabel(o.status)}</Text>
+          </View>
+          <View style={styles.timelineWrap}>
+            {(o.statusTimeline || []).map((step, i) => (
+              <Text key={`${o.id}-timeline-${i}`} style={styles.timelineItem}>
+                • {statusLabel(step.status)} - {step.at ? new Date(step.at).toLocaleString() : "-"}
+              </Text>
+            ))}
+          </View>
           <View style={styles.itemsWrap}>
             {(o.items || []).map((it, i) => (
               <Text key={`${o.id}-${i}`} style={styles.item}>
@@ -91,6 +106,17 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 16, fontWeight: "700", color: brand.dark },
   meta: { color: brand.textLight, marginTop: 2 },
   total: { color: brand.dark, marginTop: 8, fontWeight: "700" },
+  badge: {
+    alignSelf: "flex-start",
+    marginTop: 8,
+    backgroundColor: brand.dark,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+  },
+  badgeText: { color: brand.white, fontWeight: "800", fontSize: 11, letterSpacing: 0.6 },
+  timelineWrap: { marginTop: 8, gap: 2 },
+  timelineItem: { color: brand.textLight, fontSize: 12 },
   itemsWrap: { marginTop: 8, gap: 4 },
   item: { color: brand.text },
   btn: { marginTop: 8, backgroundColor: brand.button, paddingVertical: 12, paddingHorizontal: 20 },

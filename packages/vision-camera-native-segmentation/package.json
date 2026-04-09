@@ -1,0 +1,12 @@
+{
+  "name": "vision-camera-native-segmentation",
+  "version": "1.0.0",
+  "description": "Vision Camera frame processor: Apple Vision person segmentation (iOS) + ML Kit selfie segmentation (Android)",
+  "main": "src/index.js",
+  "license": "MIT",
+  "peerDependencies": {
+    "react": "*",
+    "react-native": "*",
+    "react-native-vision-camera": ">=4.0.0"
+  }
+}

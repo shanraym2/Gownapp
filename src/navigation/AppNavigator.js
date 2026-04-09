@@ -16,6 +16,8 @@ import { SignupScreen } from "../screens/SignupScreen";
 import { ForgotPasswordScreen } from "../screens/ForgotPasswordScreen";
 import { MyOrdersScreen } from "../screens/MyOrdersScreen";
 import { ContactScreen } from "../screens/ContactScreen";
+import { AdminOrdersScreen } from "../screens/AdminOrdersScreen";
+import { AdminGownsScreen } from "../screens/AdminGownsScreen";
 
 const Stack = createNativeStackNavigator();
 const Tabs = createBottomTabNavigator();
@@ -64,6 +66,8 @@ export function AppNavigator() {
         <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} options={{ title: "Forgot Password" }} />
         <Stack.Screen name="MyOrders" component={MyOrdersScreen} options={{ title: "My Orders" }} />
         <Stack.Screen name="Contact" component={ContactScreen} />
+        <Stack.Screen name="AdminOrders" component={AdminOrdersScreen} options={{ title: "Admin • Orders" }} />
+        <Stack.Screen name="AdminGowns" component={AdminGownsScreen} options={{ title: "Admin • Gowns" }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

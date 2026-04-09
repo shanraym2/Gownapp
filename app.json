@@ -13,7 +13,8 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.jcebridal.mobile"
+      "bundleIdentifier": "com.jcebridal.mobile",
+      "deploymentTarget": "15.1"
     },
     "android": {
       "package": "com.jcebridal.mobile",
@@ -26,6 +27,14 @@
       }
     },
     "plugins": [
+      [
+        "react-native-vision-camera",
+        {
+          "cameraPermissionText": "Allow JCE Bridal to access your camera for AR gown try-on.",
+          "enableMicrophonePermission": false,
+          "enableFrameProcessors": true
+        }
+      ],
       [
         "expo-camera",
         {

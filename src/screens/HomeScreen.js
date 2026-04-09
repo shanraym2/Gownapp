@@ -1,7 +1,7 @@
 import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useShop } from "../context/ShopContext";
 import { brand } from "../theme/brand";
 
@@ -10,6 +10,8 @@ export function HomeScreen({ navigation }) {
   const { gowns, cartDetailed, favoritesSet, toggleFavorite } = useShop();
   const [query, setQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
+  const [searchFocused, setSearchFocused] = useState(false);
+  const searchInputRef = useRef(null);
   const fallbackImage = "https://via.placeholder.com/800x1000/F5EFE7/5C4A42?text=JCE+Bridal";
   const arImage = gowns[0]?.image || fallbackImage;
 
@@ -60,24 +62,58 @@ export function HomeScreen({ navigation }) {
     return list.slice(-4).reverse();
   }, [filtered]);
 
+  const searchSuggestions = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) {
+      const preferredOrder = ["Gowns", "Dresses", "Suit"];
+      const sampleByType = preferredOrder
+        .map((type) => gowns.find((g) => String(g?.type) === type))
+        .filter(Boolean);
+      const extras = gowns.filter((g) => !sampleByType.some((x) => x.id === g.id)).slice(0, 3);
+      return [...sampleByType, ...extras].slice(0, 6);
+    }
+    if (activeCategory === "All") {
+      const byQuery = gowns.filter((g) =>
+        `${g.name || ""} ${g.type || ""} ${g.color || ""} ${g.silhouette || ""}`
+          .toLowerCase()
+          .includes(q)
+      );
+      return byQuery.slice(0, 6);
+    }
+    return filtered.slice(0, 6);
+  }, [activeCategory, filtered, gowns, query]);
+
   return (
     <ScrollView
       style={styles.screen}
       contentContainerStyle={[styles.content, { paddingTop: insets.top }]}
       showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+      onScrollBeginDrag={() => setSearchFocused(false)}
     >
       <View style={styles.topBar}>
-        <View style={styles.searchWrap}>
+        <Pressable
+          style={styles.searchWrap}
+          onPress={() => {
+            setSearchFocused(true);
+            searchInputRef.current?.focus();
+          }}
+        >
           <Ionicons name="search" size={16} color={brand.textLight} />
           <TextInput
+            ref={searchInputRef}
             value={query}
             onChangeText={setQuery}
             placeholder="Find your gown…"
             placeholderTextColor={brand.textLight}
             style={styles.searchInput}
             returnKeyType="search"
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => {
+              setTimeout(() => setSearchFocused(false), 120);
+            }}
           />
-        </View>
+        </Pressable>
 
         <Pressable style={styles.cartBtn} onPress={() => navigation.navigate("Cart")}>
           <Ionicons name="cart" size={20} color={brand.dark} />
@@ -88,6 +124,39 @@ export function HomeScreen({ navigation }) {
           ) : null}
         </Pressable>
       </View>
+      {searchFocused ? (
+        <View style={styles.searchSuggestWrap}>
+          <Text style={styles.searchListTitle}>Suggestions</Text>
+          {searchSuggestions.length ? (
+            searchSuggestions.map((item) => (
+              <Pressable
+                key={`focus-suggest-${item.id}`}
+                style={styles.searchListItem}
+                onPress={() => {
+                  setQuery(item.name);
+                  setSearchFocused(false);
+                  navigation.navigate("GownDetail", { id: item.id });
+                }}
+              >
+                <View style={styles.searchListThumb}>
+                  <Image source={{ uri: item.image || fallbackImage }} style={styles.searchListThumbImage} />
+                </View>
+                <View style={styles.searchListMeta}>
+                  <Text style={styles.searchListName} numberOfLines={1}>
+                    {item.name}
+                  </Text>
+                  <Text style={styles.searchListType} numberOfLines={1}>
+                    {item.type} • {item.color}
+                  </Text>
+                </View>
+                <Text style={styles.searchListPrice}>{item.price}</Text>
+              </Pressable>
+            ))
+          ) : (
+            <Text style={styles.searchListEmpty}>No matching styles yet.</Text>
+          )}
+        </View>
+      ) : null}
 
       <ScrollView
         horizontal
@@ -299,6 +368,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   cartBadgeText: { color: brand.white, fontSize: 10, fontWeight: "800" },
+  searchSuggestWrap: {
+    marginHorizontal: 16,
+    marginTop: -4,
+    marginBottom: 8,
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: brand.border,
+    backgroundColor: brand.white,
+    gap: 8,
+  },
 
   carousel: { paddingHorizontal: 16 },
   carouselContent: { gap: 12 },
@@ -371,6 +451,28 @@ const styles = StyleSheet.create({
   categoryChipActive: { backgroundColor: brand.dark, borderColor: brand.dark },
   categoryChipText: { color: brand.dark, fontWeight: "800", fontSize: 12 },
   categoryChipTextActive: { color: brand.white },
+
+  searchListTitle: { color: brand.dark, fontWeight: "800", fontSize: 12 },
+  searchListItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 6,
+  },
+  searchListThumb: {
+    width: 42,
+    height: 42,
+    borderRadius: 8,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: brand.border,
+  },
+  searchListThumbImage: { width: "100%", height: "100%" },
+  searchListMeta: { flex: 1, minWidth: 0 },
+  searchListName: { color: brand.dark, fontWeight: "700", fontSize: 12 },
+  searchListType: { color: brand.textLight, fontSize: 11, marginTop: 2 },
+  searchListPrice: { color: brand.dark, fontSize: 11, fontWeight: "800" },
+  searchListEmpty: { color: brand.textLight, fontSize: 12 },
 
   gridSection: { paddingHorizontal: 16, marginTop: 16 },
   sectionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
