@@ -1,14 +1,26 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Animated, Image, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Alert, Animated, Image, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import Constants, { ExecutionEnvironment } from "expo-constants";
 import * as MediaLibrary from "expo-media-library";
 import * as Sharing from "expo-sharing";
+import { useIsFocused } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { captureRef } from "react-native-view-shot";
-import { useShop } from "../context/ShopContext";
+import { GownNativeSegmentationOverlay } from "../ar/GownNativeSegmentationOverlay";
+import { GownSvgOverlay } from "../ar/GownSvgOverlay";
+import { NativePoseCamera } from "../ar/NativePoseCamera";
+import { isNativeSegmentationAvailable } from "vision-camera-native-segmentation";
 import { getAutoFitTransform } from "../ar/autoFit";
+import { posePluginToLandmarks } from "../ar/posePluginToLandmarks";
+import { smoothPoseTransform } from "../ar/smoothPoseTransform";
+import { useShop } from "../context/ShopContext";
 import { brand } from "../theme/brand";
 import { loadArFitProfiles, saveArFitProfiles } from "../utils/storage";
+
+const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+const canUseNativePose = Platform.OS !== "web" && !isExpoGo;
+const segmentationNativeLinked = isNativeSegmentationAvailable();
 
 const DEFAULT_FIT_MODEL = {
   centerX: 0.5,
@@ -19,6 +31,7 @@ const DEFAULT_FIT_MODEL = {
 
 export function ARTryOnScreen() {
   const { gowns } = useShop();
+  const isFocused = useIsFocused();
   const [permission, requestPermission] = useCameraPermissions();
   const [cameraFacing, setCameraFacing] = useState("front");
   const [selectedId, setSelectedId] = useState(null);
@@ -26,12 +39,23 @@ export function ARTryOnScreen() {
   const [overlayOpacity, setOverlayOpacity] = useState(0.72);
   const [autoFitEnabled, setAutoFitEnabled] = useState(true);
   const [poseDetected, setPoseDetected] = useState(false);
+  const [limbOcclusionEnabled, setLimbOcclusionEnabled] = useState(true);
+  const [nativeSegmentationEnabled, setNativeSegmentationEnabled] = useState(true);
+  const [nativeMaskUri, setNativeMaskUri] = useState(null);
   const [fitModel, setFitModel] = useState(DEFAULT_FIT_MODEL);
   const [profilesLoaded, setProfilesLoaded] = useState(false);
   const [fitProfiles, setFitProfiles] = useState({});
   const [saving, setSaving] = useState(false);
+  const [previewLayout, setPreviewLayout] = useState({ width: 320, height: 430 });
+  const [overlayLayout, setOverlayLayout] = useState({ width: 0, height: 0 });
+  const [livePoseTransform, setLivePoseTransform] = useState(null);
+  const [landmarksForMask, setLandmarksForMask] = useState(null);
   const overlayPan = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
   const previewRef = useRef(null);
+  const videoDimsRef = useRef({ width: 720, height: 1280 });
+  const previewLayoutRef = useRef({ width: 320, height: 430 });
+  const poseSmoothRef = useRef(null);
+  const lastPoseAtRef = useRef(0);
 
   const selectedGown = useMemo(() => {
     const fallback = gowns[0] || null;
@@ -80,7 +104,6 @@ export function ARTryOnScreen() {
     }));
   };
 
-  // Temporary seed landmarks until native pose stream is connected.
   const seedLandmarks = useMemo(
     () => ({
       leftShoulder: { x: fitModel.centerX - fitModel.shoulderWidth / 2, y: fitModel.centerY - fitModel.torsoHeight / 2 },
@@ -91,10 +114,99 @@ export function ARTryOnScreen() {
     [fitModel]
   );
 
+  const frameSize = useMemo(() => {
+    const w = previewLayout.width || 320;
+    const h = previewLayout.height || 430;
+    return { width: w, height: h };
+  }, [previewLayout.height, previewLayout.width]);
+
+  const seedAutoFit = useMemo(() => {
+    if (!autoFitEnabled) return null;
+    return getAutoFitTransform(seedLandmarks, frameSize);
+  }, [autoFitEnabled, seedLandmarks, frameSize]);
+
+  const trackingLivePose = canUseNativePose && poseDetected && livePoseTransform != null;
+
+  const showNativePersonMask =
+    segmentationNativeLinked &&
+    nativeSegmentationEnabled &&
+    nativeMaskUri &&
+    overlayLayout.width > 40 &&
+    overlayLayout.height > 40;
+
   const autoFit = useMemo(() => {
     if (!autoFitEnabled) return null;
-    return getAutoFitTransform(seedLandmarks, { width: 320, height: 430 });
-  }, [autoFitEnabled, seedLandmarks]);
+    if (trackingLivePose) return livePoseTransform;
+    return seedAutoFit;
+  }, [autoFitEnabled, livePoseTransform, seedAutoFit, trackingLivePose]);
+
+  const onVideoDimensions = useCallback((dims) => {
+    if (dims?.width && dims?.height) videoDimsRef.current = dims;
+  }, []);
+
+  const onSegmentationResult = useCallback((r) => {
+    if (!r || typeof r !== "object" || r.error) return;
+    if (r.maskBase64 && typeof r.maskBase64 === "string") {
+      setNativeMaskUri(`data:image/png;base64,${r.maskBase64}`);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!nativeSegmentationEnabled) setNativeMaskUri(null);
+  }, [nativeSegmentationEnabled]);
+
+  const onPoseMap = useCallback(
+    (raw) => {
+      if (!autoFitEnabled || !canUseNativePose) return;
+      const { width: vw, height: vh } = videoDimsRef.current;
+      const landmarks = posePluginToLandmarks(raw, vw, vh, cameraFacing === "front");
+      if (!landmarks) {
+        return;
+      }
+      lastPoseAtRef.current = Date.now();
+      setPoseDetected(true);
+      const pl = previewLayoutRef.current;
+      const fs = { width: pl.width || 320, height: pl.height || 430 };
+      const t = getAutoFitTransform(landmarks, fs);
+      if (!t) return;
+      poseSmoothRef.current = smoothPoseTransform(poseSmoothRef.current, t, 0.38);
+      setLivePoseTransform({ ...poseSmoothRef.current });
+
+      const { width: pw, height: ph } = previewLayoutRef.current;
+      if (pw > 0 && ph > 0) {
+        const maskLm = {};
+        for (const k of ["leftWrist", "rightWrist", "leftElbow", "rightElbow"]) {
+          const p = landmarks[k];
+          if (p) maskLm[k] = { x: p.x, y: p.y };
+        }
+        setLandmarksForMask(maskLm);
+      }
+    },
+    [autoFitEnabled, cameraFacing, canUseNativePose]
+  );
+
+  useEffect(() => {
+    if (!canUseNativePose || !autoFitEnabled) return undefined;
+    const id = setInterval(() => {
+      if (Date.now() - lastPoseAtRef.current > 900) {
+        setPoseDetected(false);
+      }
+    }, 350);
+    return () => clearInterval(id);
+  }, [autoFitEnabled, canUseNativePose]);
+
+  useEffect(() => {
+    previewLayoutRef.current = previewLayout;
+  }, [previewLayout]);
+
+  useEffect(() => {
+    poseSmoothRef.current = null;
+    setLivePoseTransform(null);
+    setLandmarksForMask(null);
+    lastPoseAtRef.current = 0;
+    setPoseDetected(false);
+    setNativeMaskUri(null);
+  }, [cameraFacing]);
 
   const panResponder = useMemo(
     () =>
@@ -164,7 +276,12 @@ export function ARTryOnScreen() {
     setOverlayOpacity(0.72);
     setFitModel(DEFAULT_FIT_MODEL);
     setAutoFitEnabled(true);
-    setPoseDetected(true);
+    poseSmoothRef.current = null;
+    setLivePoseTransform(null);
+    setLandmarksForMask(null);
+    lastPoseAtRef.current = 0;
+    setPoseDetected(false);
+    setNativeMaskUri(null);
   };
 
   const onSaveFitProfile = async () => {
@@ -209,7 +326,12 @@ export function ARTryOnScreen() {
   }
 
   return (
-    <View style={styles.screen}>
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={styles.screenContent}
+      showsVerticalScrollIndicator={false}
+      nestedScrollEnabled
+    >
       <View style={styles.header}>
         <Text style={styles.title}>AR Try-On</Text>
         <Text style={styles.subtitle}>Pick a gown and align it on your camera preview.</Text>
@@ -223,8 +345,29 @@ export function ARTryOnScreen() {
         </View>
       </View>
 
-      <View ref={previewRef} collapsable={false} style={styles.cameraWrap}>
-        <CameraView style={styles.camera} facing={cameraFacing} />
+      <View
+        ref={previewRef}
+        collapsable={false}
+        style={styles.cameraWrap}
+        onLayout={(e) => {
+          const { width, height } = e.nativeEvent.layout;
+          setPreviewLayout({ width, height });
+        }}
+      >
+        {canUseNativePose ? (
+          <NativePoseCamera
+            facing={cameraFacing}
+            isActive={Boolean(permission?.granted && isFocused)}
+            onPoseMap={onPoseMap}
+            onVideoDimensions={onVideoDimensions}
+            targetFps={12}
+            segmentationEnabled={segmentationNativeLinked && nativeSegmentationEnabled}
+            segmentationFps={5}
+            onSegmentationResult={onSegmentationResult}
+          />
+        ) : (
+          <CameraView style={styles.camera} facing={cameraFacing} />
+        )}
         <Animated.View
           style={[
             styles.overlayMover,
@@ -236,24 +379,47 @@ export function ARTryOnScreen() {
                 {
                   translateY: autoFitEnabled && autoFit ? autoFit.translateY : overlayPan.y,
                 },
+                { scale: autoFitEnabled && autoFit ? autoFit.scale : overlayScale },
               ],
             },
           ]}
-          {...panResponder.panHandlers}
+          onLayout={(e) => {
+            const { width, height } = e.nativeEvent.layout;
+            setOverlayLayout({ width, height });
+          }}
+          {...(!autoFitEnabled ? panResponder.panHandlers : {})}
         >
-          <Image
-            source={{ uri: selectedGown.image }}
-            style={[
-              styles.overlayImage,
-              {
-                opacity: overlayOpacity,
-                transform: [{ scale: autoFitEnabled && autoFit ? autoFit.scale : overlayScale }],
-              },
-            ]}
-          />
+          {showNativePersonMask ? (
+            <GownNativeSegmentationOverlay
+              width={overlayLayout.width}
+              height={overlayLayout.height}
+              gownUri={selectedGown.image}
+              maskDataUri={nativeMaskUri}
+              opacity={overlayOpacity}
+            />
+          ) : limbOcclusionEnabled &&
+            trackingLivePose &&
+            overlayLayout.width > 40 &&
+            overlayLayout.height > 40 ? (
+            <GownSvgOverlay
+              width={overlayLayout.width}
+              height={overlayLayout.height}
+              uri={selectedGown.image}
+              opacity={overlayOpacity}
+              landmarksNorm={landmarksForMask}
+              enabled
+            />
+          ) : (
+            <Image
+              source={{ uri: selectedGown.image }}
+              style={[styles.overlayImage, { opacity: overlayOpacity }]}
+            />
+          )}
         </Animated.View>
         <View style={styles.overlayLabel}>
-          <Text style={styles.overlayLabelText}>{selectedGown.name} • Drag to position</Text>
+          <Text style={styles.overlayLabelText}>
+            {selectedGown.name} • {autoFitEnabled ? "Live pose + auto-fit" : "Drag to position"}
+          </Text>
         </View>
       </View>
 
@@ -265,7 +431,12 @@ export function ARTryOnScreen() {
             onPress={() => {
               const next = !autoFitEnabled;
               setAutoFitEnabled(next);
-              setPoseDetected(next);
+              if (!next) {
+                setPoseDetected(false);
+                setLivePoseTransform(null);
+                setLandmarksForMask(null);
+                poseSmoothRef.current = null;
+              }
             }}
           >
             <Text style={[styles.toggleText, autoFitEnabled ? styles.toggleTextActive : null]}>
@@ -273,10 +444,42 @@ export function ARTryOnScreen() {
             </Text>
           </Pressable>
         </View>
+        {canUseNativePose && segmentationNativeLinked ? (
+          <View style={styles.controlRow}>
+            <Text style={styles.controlLabel}>Native person mask</Text>
+            <Pressable
+              style={[styles.toggleBtn, nativeSegmentationEnabled ? styles.toggleBtnActive : null]}
+              onPress={() => setNativeSegmentationEnabled((v) => !v)}
+            >
+              <Text style={[styles.toggleText, nativeSegmentationEnabled ? styles.toggleTextActive : null]}>
+                {nativeSegmentationEnabled ? "ON" : "OFF"}
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
+        {canUseNativePose ? (
+          <View style={styles.controlRow}>
+            <Text style={styles.controlLabel}>Limb holes (pose)</Text>
+            <Pressable
+              style={[styles.toggleBtn, limbOcclusionEnabled ? styles.toggleBtnActive : null]}
+              onPress={() => setLimbOcclusionEnabled((v) => !v)}
+            >
+              <Text style={[styles.toggleText, limbOcclusionEnabled ? styles.toggleTextActive : null]}>
+                {limbOcclusionEnabled ? "ON" : "OFF"}
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
         <Text style={styles.hintText}>
-          {poseDetected
-            ? "Auto-fit calibration active. Next step: connect live pose landmarks for true body tracking."
-            : "Auto-fit off. Use drag and manual controls."}
+          {!canUseNativePose
+            ? Platform.OS === "web"
+              ? "Web preview uses manual fit. Use iOS/Android dev build for live pose."
+              : "Expo Go cannot run frame processors. Use a dev build (expo run:android) for live pose + limb masking."
+            : poseDetected
+              ? "iOS: Apple Vision person segmentation. Android: ML Kit selfie mask. Hides gown where you are so the camera shows through (rebuild app after adding native module)."
+              : autoFitEnabled
+                ? "Step into frame; seed sliders fine-tune until pose locks."
+                : "Auto-fit off — drag the gown and use size/opacity."}
         </Text>
 
         {autoFitEnabled && (
@@ -363,7 +566,7 @@ export function ARTryOnScreen() {
       </View>
 
       <Text style={styles.pickerTitle}>Choose Gown</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pickerRow}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pickerRow} nestedScrollEnabled>
         {gowns.map((g) => {
           const active = Number(g.id) === Number(selectedGown.id);
           return (
@@ -394,12 +597,13 @@ export function ARTryOnScreen() {
       <Pressable style={styles.secondaryBtn} onPress={onSaveFitProfile}>
         <Text style={styles.secondaryBtnText}>Save Fit for This Gown</Text>
       </Pressable>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: brand.bg, padding: 16 },
+  screen: { flex: 1, backgroundColor: brand.bg },
+  screenContent: { padding: 16, paddingBottom: 28 },
   center: { flex: 1, backgroundColor: brand.bg, alignItems: "center", justifyContent: "center", padding: 16 },
   header: { marginBottom: 10 },
   title: { fontSize: 30, color: brand.dark, fontWeight: "900", marginBottom: 4, fontStyle: "italic" },
