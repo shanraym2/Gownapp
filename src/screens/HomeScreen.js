@@ -2,18 +2,23 @@ import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useMemo, useRef, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import { useShop } from "../context/ShopContext";
 import { brand } from "../theme/brand";
 
 export function HomeScreen({ navigation }) {
   const insets = useSafeAreaInsets();
-  const { gowns, cartDetailed, favoritesSet, toggleFavorite } = useShop();
+  const { gowns, reloadGowns, cartDetailed, favoritesSet, toggleFavorite } = useShop();
   const [query, setQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
   const [searchFocused, setSearchFocused] = useState(false);
   const searchInputRef = useRef(null);
   const fallbackImage = "https://via.placeholder.com/800x1000/F5EFE7/5C4A42?text=JCE+Bridal";
   const arImage = gowns[0]?.image || fallbackImage;
+
+  useFocusEffect(() => {
+    reloadGowns?.();
+  });
 
   const cartCount = useMemo(
     () => cartDetailed.reduce((sum, item) => sum + (item.qty || 0), 0),
@@ -50,6 +55,10 @@ export function HomeScreen({ navigation }) {
   }, [gowns]);
 
   const featuredGowns = useMemo(() => filtered.slice(0, 4), [filtered]);
+
+  const promoItems = useMemo(() => {
+    return gowns.filter((g) => g?.promo && g?.promoPrice);
+  }, [gowns]);
 
   const recommended = useMemo(() => {
     const prefType = cartDetailed?.[0]?.type || null;
@@ -149,7 +158,7 @@ export function HomeScreen({ navigation }) {
                     {item.type} • {item.color}
                   </Text>
                 </View>
-                <Text style={styles.searchListPrice}>{item.price}</Text>
+                <Text style={styles.searchListPrice}>{item.promo && item.promoPrice ? item.promoPrice : item.price}</Text>
               </Pressable>
             ))
           ) : (
@@ -206,8 +215,10 @@ export function HomeScreen({ navigation }) {
 
       <View style={styles.promoBanner}>
         <View style={styles.promoLeft}>
-          <Text style={styles.promoTitle}>Promo banner</Text>
-          <Text style={styles.promoText}>Limited slots for fittings • New 2026 arrivals</Text>
+          <Text style={styles.promoTitle}>Promos</Text>
+          <Text style={styles.promoText}>
+            {promoItems.length ? `${promoItems.length} discounted styles available today.` : "No discounted styles yet."}
+          </Text>
         </View>
         <Pressable
           style={styles.promoBtn}
@@ -216,6 +227,31 @@ export function HomeScreen({ navigation }) {
           <Text style={styles.promoBtnText}>Browse</Text>
         </Pressable>
       </View>
+
+      {promoItems.length ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.promoStrip}
+        >
+          {promoItems.slice(0, 10).map((g) => (
+            <Pressable
+              key={`promo-${g.id}`}
+              style={styles.promoCard}
+              onPress={() => navigation.navigate("GownDetail", { id: g.id })}
+            >
+              <Image source={{ uri: g.image || fallbackImage }} style={styles.promoCardImage} />
+              <Text style={styles.promoCardName} numberOfLines={1}>
+                {g.name}
+              </Text>
+              <View style={styles.promoPriceRow}>
+                <Text style={styles.promoOldPrice}>{g.price}</Text>
+                <Text style={styles.promoNewPrice}>{g.promoPrice}</Text>
+              </View>
+            </Pressable>
+          ))}
+        </ScrollView>
+      ) : null}
 
       <View style={styles.section}>
         <Text style={styles.sectionLabel}>Featured collection</Text>
@@ -253,7 +289,7 @@ export function HomeScreen({ navigation }) {
                   {g.name}
                 </Text>
                 <Text style={styles.gridMeta} numberOfLines={1}>
-                  {g.price} • {g.silhouette}
+                  {g.promo && g.promoPrice ? `${g.promoPrice} • Promo` : g.price} • {g.silhouette}
                 </Text>
               </Pressable>
               <Pressable style={styles.favBtn} onPress={() => toggleFavorite(g.id)}>
@@ -309,7 +345,7 @@ export function HomeScreen({ navigation }) {
                   {g.name}
                 </Text>
                 <Text style={styles.gridMeta} numberOfLines={1}>
-                  {g.price}
+                  {g.promo && g.promoPrice ? `${g.promoPrice} • Promo` : g.price}
                 </Text>
               </Pressable>
               <Pressable style={styles.favBtn} onPress={() => toggleFavorite(g.id)}>
@@ -408,6 +444,21 @@ const styles = StyleSheet.create({
   promoText: { color: brand.textLight, fontSize: 12 },
   promoBtn: { backgroundColor: brand.accentSoft, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12 },
   promoBtnText: { color: brand.dark, fontWeight: "900", fontSize: 12 },
+
+  promoStrip: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 2, gap: 10 },
+  promoCard: {
+    width: 150,
+    borderWidth: 1,
+    borderColor: brand.border,
+    backgroundColor: brand.white,
+    borderRadius: 14,
+    padding: 10,
+  },
+  promoCardImage: { width: "100%", height: 110, borderRadius: 10, marginBottom: 8, backgroundColor: "#eee" },
+  promoCardName: { color: brand.dark, fontWeight: "800", fontSize: 12, marginBottom: 6 },
+  promoPriceRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  promoOldPrice: { color: brand.textLight, fontSize: 11, fontWeight: "800", textDecorationLine: "line-through" },
+  promoNewPrice: { color: brand.buttonAlt, fontSize: 12, fontWeight: "900" },
 
   arCta: {
     marginTop: 18,

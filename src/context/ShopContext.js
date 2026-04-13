@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { fetchGowns } from "../services/gowns";
 import { clearUser, loadCart, loadFavorites, loadUser, saveCart, saveFavorites, saveUser } from "../utils/storage";
 import { getLastSyncAt, syncUserData } from "../services/sync";
@@ -12,6 +12,12 @@ export function ShopProvider({ children }) {
   const [user, setUser] = useState(null);
   const [favoritesIds, setFavoritesIds] = useState([]);
   const [lastSyncedAt, setLastSyncedAt] = useState("");
+
+  const reloadGowns = useCallback(async () => {
+    const data = await fetchGowns();
+    setGowns(Array.isArray(data) ? data : []);
+    return data;
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -126,6 +132,7 @@ export function ShopProvider({ children }) {
   const value = {
     loading,
     gowns,
+    reloadGowns,
     cartDetailed,
     subtotal,
     favoritesIds,

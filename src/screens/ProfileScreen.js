@@ -7,6 +7,7 @@ import { brand } from "../theme/brand";
 
 export function ProfileScreen({ navigation }) {
   const { user, login, logout, lastSyncedAt } = useShop();
+  const isAdmin = user?.role === "admin" || user?.role === "super_admin";
   const [profileForm, setProfileForm] = useState({ name: "", phone: "" });
   const [passwordForm, setPasswordForm] = useState({ currentPassword: "", nextPassword: "" });
   const [deletePassword, setDeletePassword] = useState("");
@@ -134,17 +135,6 @@ export function ProfileScreen({ navigation }) {
           <Pressable style={styles.btn} onPress={() => navigation.navigate("MyOrders")}>
             <Text style={styles.btnText}>View My Orders</Text>
           </Pressable>
-          {user?.role === "admin" || user?.role === "super_admin" ? (
-            <>
-              <Text style={styles.section}>Admin Panel</Text>
-              <Pressable style={styles.outline} onPress={() => navigation.navigate("AdminOrders")}>
-                <Text style={styles.outlineText}>Manage Orders</Text>
-              </Pressable>
-              <Pressable style={styles.outline} onPress={() => navigation.navigate("AdminGowns")}>
-                <Text style={styles.outlineText}>Manage Gowns</Text>
-              </Pressable>
-            </>
-          ) : null}
           <Text style={styles.section}>Profile</Text>
           <TextInput style={styles.input} placeholder="Full name" value={profileForm.name} onChangeText={(v) => setProfileForm((p) => ({ ...p, name: v }))} />
           <TextInput style={styles.input} placeholder="Phone number" value={profileForm.phone} onChangeText={(v) => setProfileForm((p) => ({ ...p, phone: v }))} />
@@ -152,26 +142,68 @@ export function ProfileScreen({ navigation }) {
             <Text style={styles.outlineText}>Save Profile</Text>
           </Pressable>
 
-          <Text style={styles.section}>Address Book</Text>
-          <TextInput style={styles.input} placeholder="Add address" value={address} onChangeText={setAddress} />
-          <Pressable style={styles.outline} onPress={onAddAddress}>
-            <Text style={styles.outlineText}>Add Address</Text>
-          </Pressable>
-          {addressBook.map((entry, idx) => (
-            <Text key={`${entry.createdAt || idx}`} style={styles.metaItem}>• {entry.value}</Text>
-          ))}
+          {!isAdmin ? (
+            <>
+              <Text style={styles.section}>Address Book</Text>
+              <TextInput style={styles.input} placeholder="Add address" value={address} onChangeText={setAddress} />
+              <Pressable style={styles.outline} onPress={onAddAddress}>
+                <Text style={styles.outlineText}>Add Address</Text>
+              </Pressable>
+              {addressBook.map((entry, idx) => (
+                <Text key={`${entry.createdAt || idx}`} style={styles.metaItem}>
+                  • {entry.value}
+                </Text>
+              ))}
 
-          <Text style={styles.section}>Checkout Auto-Fill</Text>
-          <TextInput style={styles.input} placeholder="First name" value={checkoutDefaults.firstName} onChangeText={(v) => setCheckoutDefaults((p) => ({ ...p, firstName: v }))} />
-          <TextInput style={styles.input} placeholder="Last name" value={checkoutDefaults.lastName} onChangeText={(v) => setCheckoutDefaults((p) => ({ ...p, lastName: v }))} />
-          <TextInput style={styles.input} placeholder="Phone number" value={checkoutDefaults.phone} onChangeText={(v) => setCheckoutDefaults((p) => ({ ...p, phone: v.replace(/\D/g, "") }))} keyboardType="phone-pad" />
-          <TextInput style={styles.input} placeholder="Street address" value={checkoutDefaults.address} onChangeText={(v) => setCheckoutDefaults((p) => ({ ...p, address: v }))} />
-          <TextInput style={styles.input} placeholder="City / Municipality" value={checkoutDefaults.city} onChangeText={(v) => setCheckoutDefaults((p) => ({ ...p, city: v }))} />
-          <TextInput style={styles.input} placeholder="Province" value={checkoutDefaults.province} onChangeText={(v) => setCheckoutDefaults((p) => ({ ...p, province: v }))} />
-          <TextInput style={styles.input} placeholder="ZIP code" value={checkoutDefaults.zip} onChangeText={(v) => setCheckoutDefaults((p) => ({ ...p, zip: v }))} />
-          <Pressable style={styles.outline} onPress={onSaveCheckoutDefaults}>
-            <Text style={styles.outlineText}>Save Checkout Defaults</Text>
-          </Pressable>
+              <Text style={styles.section}>Checkout Auto-Fill</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="First name"
+                value={checkoutDefaults.firstName}
+                onChangeText={(v) => setCheckoutDefaults((p) => ({ ...p, firstName: v }))}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Last name"
+                value={checkoutDefaults.lastName}
+                onChangeText={(v) => setCheckoutDefaults((p) => ({ ...p, lastName: v }))}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Phone number"
+                value={checkoutDefaults.phone}
+                onChangeText={(v) => setCheckoutDefaults((p) => ({ ...p, phone: v.replace(/\D/g, "") }))}
+                keyboardType="phone-pad"
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Street address"
+                value={checkoutDefaults.address}
+                onChangeText={(v) => setCheckoutDefaults((p) => ({ ...p, address: v }))}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="City / Municipality"
+                value={checkoutDefaults.city}
+                onChangeText={(v) => setCheckoutDefaults((p) => ({ ...p, city: v }))}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Province"
+                value={checkoutDefaults.province}
+                onChangeText={(v) => setCheckoutDefaults((p) => ({ ...p, province: v }))}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="ZIP code"
+                value={checkoutDefaults.zip}
+                onChangeText={(v) => setCheckoutDefaults((p) => ({ ...p, zip: v }))}
+              />
+              <Pressable style={styles.outline} onPress={onSaveCheckoutDefaults}>
+                <Text style={styles.outlineText}>Save Checkout Defaults</Text>
+              </Pressable>
+            </>
+          ) : null}
 
           <Text style={styles.section}>Change Password</Text>
           <TextInput style={styles.input} secureTextEntry placeholder="Current password" value={passwordForm.currentPassword} onChangeText={(v) => setPasswordForm((p) => ({ ...p, currentPassword: v }))} />
@@ -180,19 +212,29 @@ export function ProfileScreen({ navigation }) {
             <Text style={styles.outlineText}>Update Password</Text>
           </Pressable>
 
-          <Text style={styles.sectionDanger}>Delete Account</Text>
-          <TextInput style={styles.input} secureTextEntry placeholder="Confirm password to delete" value={deletePassword} onChangeText={setDeletePassword} />
-          <Pressable
-            style={styles.dangerBtn}
-            onPress={() => {
-              Alert.alert("Delete account", "This action cannot be undone. Continue?", [
-                { text: "Cancel", style: "cancel" },
-                { text: "Delete", style: "destructive", onPress: onDeleteAccount },
-              ]);
-            }}
-          >
-            <Text style={styles.btnText}>Delete Account</Text>
-          </Pressable>
+          {!isAdmin ? (
+            <>
+              <Text style={styles.sectionDanger}>Delete Account</Text>
+              <TextInput
+                style={styles.input}
+                secureTextEntry
+                placeholder="Confirm password to delete"
+                value={deletePassword}
+                onChangeText={setDeletePassword}
+              />
+              <Pressable
+                style={styles.dangerBtn}
+                onPress={() => {
+                  Alert.alert("Delete account", "This action cannot be undone. Continue?", [
+                    { text: "Cancel", style: "cancel" },
+                    { text: "Delete", style: "destructive", onPress: onDeleteAccount },
+                  ]);
+                }}
+              >
+                <Text style={styles.btnText}>Delete Account</Text>
+              </Pressable>
+            </>
+          ) : null}
           <Pressable style={styles.outline} onPress={() => navigation.navigate("Contact")}>
             <Text style={styles.outlineText}>Contact Us</Text>
           </Pressable>

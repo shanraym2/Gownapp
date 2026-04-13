@@ -127,7 +127,7 @@ export function GownsScreen({ navigation, route }) {
             <Image source={{ uri: item.image }} style={styles.cardImage} />
             <Text style={styles.cardTitle}>{item.name}</Text>
             <Text style={styles.cardMeta}>{item.type} • {item.color}</Text>
-            {promoMode && item.promo && item.promoPrice ? (
+            {item.promo && item.promoPrice ? (
               <View style={styles.priceRow}>
                 <Text style={styles.oldPrice}>{item.price}</Text>
                 <Text style={styles.promoPrice}>{item.promoPrice}</Text>

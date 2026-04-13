@@ -33,7 +33,14 @@ export function GownDetailScreen({ route, navigation }) {
             <Ionicons name={liked ? "heart" : "heart-outline"} size={20} color={liked ? brand.buttonAlt : brand.textLight} />
           </Pressable>
         </View>
-        <Text style={styles.price}>{gown.price}</Text>
+        {gown.promo && gown.promoPrice ? (
+          <View style={styles.priceRow}>
+            <Text style={styles.oldPrice}>{gown.price}</Text>
+            <Text style={styles.promoPrice}>{gown.promoPrice}</Text>
+          </View>
+        ) : (
+          <Text style={styles.price}>{gown.price}</Text>
+        )}
         <Text style={styles.desc}>{gown.description}</Text>
         <Text style={styles.meta}>Type: {gown.type}</Text>
         <Text style={styles.meta}>Color: {gown.color}</Text>
@@ -63,6 +70,9 @@ const styles = StyleSheet.create({
   title: { fontSize: 32, fontWeight: "700", color: brand.dark, fontStyle: "italic" },
   favBtn: { width: 40, height: 40, borderRadius: 999, backgroundColor: brand.white, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: brand.border },
   price: { fontSize: 13, color: brand.textLight, fontWeight: "600", marginBottom: 10, letterSpacing: 1.2, textTransform: "uppercase" },
+  priceRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
+  oldPrice: { fontSize: 13, color: brand.textLight, fontWeight: "700", letterSpacing: 1.2, textDecorationLine: "line-through" },
+  promoPrice: { fontSize: 14, color: brand.buttonAlt, fontWeight: "900", letterSpacing: 1.2, textTransform: "uppercase" },
   desc: { color: brand.textLight, lineHeight: 21, marginBottom: 10 },
   meta: { color: brand.text, fontSize: 13, marginBottom: 4 },
   btn: { marginTop: 6, backgroundColor: brand.button, paddingVertical: 12, borderRadius: 9 },

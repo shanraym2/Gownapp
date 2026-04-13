@@ -3,12 +3,14 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { brand } from "../theme/brand";
+import { useShop } from "../context/ShopContext";
 import { HomeScreen } from "../screens/HomeScreen";
 import { GownsScreen } from "../screens/GownsScreen";
 import { CartScreen } from "../screens/CartScreen";
 import { ARTryOnScreen } from "../screens/ARTryOnScreen";
 import { FavoritesScreen } from "../screens/FavoritesScreen";
 import { ProfileScreen } from "../screens/ProfileScreen";
+import { AdminPanelScreen } from "../screens/AdminPanelScreen";
 import { GownDetailScreen } from "../screens/GownDetailScreen";
 import { CheckoutScreen } from "../screens/CheckoutScreen";
 import { LoginScreen } from "../screens/LoginScreen";
@@ -23,6 +25,9 @@ const Stack = createNativeStackNavigator();
 const Tabs = createBottomTabNavigator();
 
 function TabsNavigator() {
+  const { user } = useShop();
+  const isAdmin = user?.role === "admin" || user?.role === "super_admin";
+
   return (
     <Tabs.Navigator
       screenOptions={({ route }) => ({
@@ -40,6 +45,9 @@ function TabsNavigator() {
           if (route.name === "Favorites") {
             return <Ionicons name="heart" size={size} color={color} />;
           }
+          if (route.name === "Admin") {
+            return <Ionicons name="shield" size={size} color={color} />;
+          }
           return <Ionicons name="person" size={size} color={color} />;
         },
       })}
@@ -47,6 +55,7 @@ function TabsNavigator() {
       <Tabs.Screen name="Home" component={HomeScreen} />
       <Tabs.Screen name="AR Try-On" component={ARTryOnScreen} />
       <Tabs.Screen name="Favorites" component={FavoritesScreen} />
+      {isAdmin ? <Tabs.Screen name="Admin" component={AdminPanelScreen} /> : null}
       <Tabs.Screen name="Profile" component={ProfileScreen} />
     </Tabs.Navigator>
   );
