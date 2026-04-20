@@ -18,6 +18,11 @@ async function saveGownsCatalog(items) {
   await AsyncStorage.setItem(GOWNS_KEY, JSON.stringify(items || []));
 }
 
+export async function setGownsCatalogAdmin(items) {
+  await saveGownsCatalog(items);
+  return { ok: true };
+}
+
 export async function getAllGownsAdmin() {
   return fetchGowns();
 }
@@ -37,6 +42,8 @@ export async function upsertGownAdmin(payload) {
     silhouette: String(payload?.silhouette || "").trim() || "A-line",
     description: String(payload?.description || "").trim() || "No description provided.",
     promo: Boolean(payload?.promo),
+    stockQty: Math.max(0, Number.parseInt(String(payload?.stockQty ?? ""), 10) || 0),
+    lowStockThreshold: Math.max(0, Number.parseInt(String(payload?.lowStockThreshold ?? ""), 10) || 0),
   };
   const index = items.findIndex((x) => Number(x.id) === id);
   const next = [...items];

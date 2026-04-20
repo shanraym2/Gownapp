@@ -11,7 +11,7 @@ function formatPrice(n) {
 }
 
 export function CheckoutScreen({ navigation }) {
-  const { cartDetailed, subtotal, clearCart, user } = useShop();
+  const { cartDetailed, subtotal, clearCart, user, reloadGowns } = useShop();
   const [submitting, setSubmitting] = useState(false);
   const [payment, setPayment] = useState("gcash");
   const [form, setForm] = useState({
@@ -105,6 +105,7 @@ export function CheckoutScreen({ navigation }) {
         createdAt: new Date().toISOString(),
       });
       await clearCart();
+      await reloadGowns();
       Alert.alert("Success", "Order placed successfully.");
       navigation.navigate("Main");
     } catch (e) {

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { useShop } from "../context/ShopContext";
 import { brand } from "../theme/brand";
 import { getOrdersByEmail } from "../services/orders";
+import { formatDateTimePH } from "../utils/datetime";
 
 function formatPrice(num) {
   return `P${Number(num || 0).toLocaleString("en-PH")}`;
@@ -14,7 +15,7 @@ function statusLabel(status) {
 }
 
 export function MyOrdersScreen({ navigation }) {
-  const { user } = useShop();
+  const { user, gowns } = useShop();
   const [loading, setLoading] = useState(true);
   const [orders, setOrders] = useState([]);
   const [error, setError] = useState("");
@@ -66,30 +67,39 @@ export function MyOrdersScreen({ navigation }) {
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {!loading && !error && orders.length === 0 ? <Text>You have not placed any orders yet.</Text> : null}
       {orders.map((o) => (
-        <View key={o.id} style={styles.card}>
-          <Text style={styles.cardTitle}>Order #{o.id}</Text>
-          <Text style={styles.meta}>{o.createdAt ? new Date(o.createdAt).toLocaleString() : "-"}</Text>
-          <Text style={styles.meta}>Payment method: {o.payment || "-"}</Text>
-          <Text style={styles.meta}>Shipping: {o.shipping?.zoneLabel || "-"}, ETA {o.shipping?.etaLabel || "-"}</Text>
-          <Text style={styles.total}>Total: {formatPrice(o.total || o.subtotal)}</Text>
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>{statusLabel(o.status)}</Text>
-          </View>
-          <View style={styles.timelineWrap}>
-            {(o.statusTimeline || []).map((step, i) => (
-              <Text key={`${o.id}-timeline-${i}`} style={styles.timelineItem}>
-                • {statusLabel(step.status)} - {step.at ? new Date(step.at).toLocaleString() : "-"}
+        <Pressable
+          key={o.id}
+          style={styles.card}
+          onPress={() => navigation.navigate("OrderDetail", { orderId: o.id })}
+        >
+          <View style={styles.rowTop}>
+            {(() => {
+              const firstItem = (o.items || [])[0];
+              const gown = gowns.find((g) => Number(g?.id) === Number(firstItem?.id));
+              if (gown?.image) {
+                return <Image source={{ uri: gown.image }} style={styles.thumb} />;
+              }
+              return <View style={styles.thumbFallback} />;
+            })()}
+
+            <View style={styles.mainCol}>
+              <Text style={styles.productName} numberOfLines={2}>
+                {(o.items || [])[0]?.name || `Order #${o.id}`}
               </Text>
-            ))}
+              <Text style={styles.meta}>Order #{o.id}</Text>
+              <Text style={styles.meta}>{formatDateTimePH(o.createdAt)}</Text>
+              <Text style={styles.meta}>x{(o.items || []).reduce((sum, it) => sum + (Number(it?.qty) || 0), 0)} items</Text>
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{statusLabel(o.status)}</Text>
+              </View>
+            </View>
+
+            <View style={styles.rightCol}>
+              <Text style={styles.totalLabel}>Order Total:</Text>
+              <Text style={styles.totalValue}>{formatPrice(o.total || o.subtotal)}</Text>
+            </View>
           </View>
-          <View style={styles.itemsWrap}>
-            {(o.items || []).map((it, i) => (
-              <Text key={`${o.id}-${i}`} style={styles.item}>
-                {it.qty} x {it.name} - {formatPrice(it.subtotal)}
-              </Text>
-            ))}
-          </View>
-        </View>
+        </Pressable>
       ))}
     </ScrollView>
   );
@@ -102,23 +112,25 @@ const styles = StyleSheet.create({
   title: { fontSize: 30, fontWeight: "700", color: brand.dark, marginBottom: 4, fontStyle: "italic" },
   hint: { color: brand.textLight, marginBottom: 12 },
   error: { color: "#a82949", marginBottom: 8 },
-  card: { borderWidth: 1, borderColor: brand.border, padding: 12, marginBottom: 10, backgroundColor: brand.white },
-  cardTitle: { fontSize: 16, fontWeight: "700", color: brand.dark },
-  meta: { color: brand.textLight, marginTop: 2 },
-  total: { color: brand.dark, marginTop: 8, fontWeight: "700" },
+  card: { borderWidth: 1, borderColor: brand.border, borderRadius: 10, padding: 10, marginBottom: 10, backgroundColor: brand.white },
+  rowTop: { flexDirection: "row", alignItems: "center" },
+  thumb: { width: 56, height: 56, borderRadius: 6, borderWidth: 1, borderColor: brand.border, backgroundColor: "#eee" },
+  thumbFallback: { width: 56, height: 56, borderRadius: 6, borderWidth: 1, borderColor: brand.border, backgroundColor: "#f3f3f3" },
+  mainCol: { flex: 1, marginLeft: 10, minWidth: 0 },
+  productName: { color: brand.dark, fontSize: 15, fontWeight: "700" },
+  meta: { color: brand.textLight, marginTop: 2, fontSize: 12 },
+  rightCol: { alignItems: "flex-end", marginLeft: 8 },
+  totalLabel: { color: brand.dark, fontSize: 12 },
+  totalValue: { color: "#c5482f", fontWeight: "900", fontSize: 24, marginTop: 2 },
   badge: {
     alignSelf: "flex-start",
-    marginTop: 8,
+    marginTop: 6,
     backgroundColor: brand.dark,
     paddingVertical: 4,
     paddingHorizontal: 10,
     borderRadius: 999,
   },
   badgeText: { color: brand.white, fontWeight: "800", fontSize: 11, letterSpacing: 0.6 },
-  timelineWrap: { marginTop: 8, gap: 2 },
-  timelineItem: { color: brand.textLight, fontSize: 12 },
-  itemsWrap: { marginTop: 8, gap: 4 },
-  item: { color: brand.text },
   btn: { marginTop: 8, backgroundColor: brand.button, paddingVertical: 12, paddingHorizontal: 20 },
   btnText: { color: brand.white, fontWeight: "700" },
 });

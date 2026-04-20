@@ -1,4 +1,4 @@
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useShop } from "../context/ShopContext";
 import { brand } from "../theme/brand";
 
@@ -21,13 +21,36 @@ export function CartScreen({ navigation }) {
               <Image source={{ uri: item.image }} style={styles.thumb} />
               <Text style={styles.name}>{item.name}</Text>
               <Text style={styles.price}>{item.price} each</Text>
+              {Number.isFinite(Number(item.stockQty)) ? (
+                <Text style={styles.stockLine}>
+                  {Number(item.stockQty) <= 0
+                    ? "Out of stock"
+                    : `Only ${Number(item.stockQty)} left`}
+                </Text>
+              ) : null}
               <Text style={styles.sub}>Subtotal: {formatPrice(item.subtotal)}</Text>
               <View style={styles.row}>
                 <Pressable style={styles.smallBtn} onPress={() => setQty(item.id, item.qty - 1)}>
                   <Text>-</Text>
                 </Pressable>
                 <Text style={styles.qty}>{item.qty}</Text>
-                <Pressable style={styles.smallBtn} onPress={() => setQty(item.id, item.qty + 1)}>
+                <Pressable
+                  style={[
+                    styles.smallBtn,
+                    Number.isFinite(Number(item.stockQty)) && item.qty >= Number(item.stockQty)
+                      ? styles.smallBtnDisabled
+                      : null,
+                  ]}
+                  disabled={Number.isFinite(Number(item.stockQty)) && item.qty >= Number(item.stockQty)}
+                  onPress={async () => {
+                    const stockQty = Number(item.stockQty);
+                    if (Number.isFinite(stockQty) && item.qty >= stockQty) {
+                      Alert.alert("Stock limit", `Only ${stockQty} left for ${item.name}.`);
+                      return;
+                    }
+                    await setQty(item.id, item.qty + 1);
+                  }}
+                >
                   <Text>+</Text>
                 </Pressable>
                 <Pressable style={styles.removeBtn} onPress={() => removeFromCart(item.id)}>
@@ -54,9 +77,11 @@ const styles = StyleSheet.create({
   thumb: { width: 86, height: 86, marginBottom: 8 },
   name: { fontSize: 16, fontWeight: "600", color: brand.dark },
   price: { color: brand.textLight, marginTop: 3 },
+  stockLine: { color: brand.textLight, marginTop: 3, fontWeight: "700", fontSize: 12 },
   sub: { color: brand.dark, marginTop: 5, fontWeight: "700" },
   row: { flexDirection: "row", alignItems: "center", marginTop: 10 },
   smallBtn: { width: 30, height: 30, borderWidth: 1, borderColor: brand.border, alignItems: "center", justifyContent: "center", backgroundColor: brand.white },
+  smallBtnDisabled: { opacity: 0.4 },
   qty: { marginHorizontal: 12, fontWeight: "700" },
   removeBtn: { marginLeft: "auto" },
   removeText: { color: "#b00020", fontWeight: "700", fontSize: 12 },

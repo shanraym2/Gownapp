@@ -7,7 +7,7 @@ import { brand } from "../theme/brand";
 
 export function ProfileScreen({ navigation }) {
   const { user, login, logout, lastSyncedAt } = useShop();
-  const isAdmin = user?.role === "admin" || user?.role === "super_admin";
+  const isAdmin = user?.role === "admin";
   const [profileForm, setProfileForm] = useState({ name: "", phone: "" });
   const [passwordForm, setPasswordForm] = useState({ currentPassword: "", nextPassword: "" });
   const [deletePassword, setDeletePassword] = useState("");

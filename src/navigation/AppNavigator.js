@@ -17,16 +17,20 @@ import { LoginScreen } from "../screens/LoginScreen";
 import { SignupScreen } from "../screens/SignupScreen";
 import { ForgotPasswordScreen } from "../screens/ForgotPasswordScreen";
 import { MyOrdersScreen } from "../screens/MyOrdersScreen";
+import { OrderDetailScreen } from "../screens/OrderDetailScreen";
 import { ContactScreen } from "../screens/ContactScreen";
 import { AdminOrdersScreen } from "../screens/AdminOrdersScreen";
 import { AdminGownsScreen } from "../screens/AdminGownsScreen";
+import { AdminStatsScreen } from "../screens/AdminStatsScreen";
+import { AdminUsersScreen } from "../screens/AdminUsersScreen";
+import { canAccess } from "../utils/access";
 
 const Stack = createNativeStackNavigator();
 const Tabs = createBottomTabNavigator();
 
 function TabsNavigator() {
   const { user } = useShop();
-  const isAdmin = user?.role === "admin" || user?.role === "super_admin";
+  const isAdmin = canAccess(user, "admin_tab");
 
   return (
     <Tabs.Navigator
@@ -74,9 +78,12 @@ export function AppNavigator() {
         <Stack.Screen name="Signup" component={SignupScreen} />
         <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} options={{ title: "Forgot Password" }} />
         <Stack.Screen name="MyOrders" component={MyOrdersScreen} options={{ title: "My Orders" }} />
+        <Stack.Screen name="OrderDetail" component={OrderDetailScreen} options={{ title: "Order Details" }} />
         <Stack.Screen name="Contact" component={ContactScreen} />
         <Stack.Screen name="AdminOrders" component={AdminOrdersScreen} options={{ title: "Admin • Orders" }} />
         <Stack.Screen name="AdminGowns" component={AdminGownsScreen} options={{ title: "Admin • Gowns" }} />
+        <Stack.Screen name="AdminStats" component={AdminStatsScreen} options={{ title: "Admin • Statistics" }} />
+        <Stack.Screen name="AdminUsers" component={AdminUsersScreen} options={{ title: "Admin • Users" }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

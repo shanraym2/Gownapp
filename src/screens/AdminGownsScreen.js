@@ -3,6 +3,8 @@ import { Alert, Image, Pressable, ScrollView, StyleSheet, Switch, Text, TextInpu
 import { useFocusEffect } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";
 import { deleteGownAdmin, getAllGownsAdmin, upsertGownAdmin } from "../services/gowns";
+import { useShop } from "../context/ShopContext";
+import { canAccess } from "../utils/access";
 import { brand } from "../theme/brand";
 
 const EMPTY_FORM = {
@@ -16,9 +18,13 @@ const EMPTY_FORM = {
   color: "",
   silhouette: "",
   description: "",
+  stockQty: "0",
+  lowStockThreshold: "0",
 };
 
 export function AdminGownsScreen() {
+  const { user } = useShop();
+  const allowed = canAccess(user, "admin_gowns");
   const [items, setItems] = useState([]);
   const [form, setForm] = useState(EMPTY_FORM);
   const [loading, setLoading] = useState(true);
@@ -65,7 +71,7 @@ export function AdminGownsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      loadData();
+      if (allowed) loadData();
     }, [loadData])
   );
 
@@ -82,6 +88,15 @@ export function AdminGownsScreen() {
     setForm(EMPTY_FORM);
     loadData();
   };
+
+  if (!allowed) {
+    return (
+      <View style={styles.deniedWrap}>
+        <Text style={styles.deniedTitle}>Access denied</Text>
+        <Text style={styles.deniedText}>You don’t have permission to manage gowns.</Text>
+      </View>
+    );
+  }
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
@@ -114,6 +129,22 @@ export function AdminGownsScreen() {
         <TextInput style={styles.input} placeholder="Type (Gowns, Dresses, Suit)" value={form.type} onChangeText={(v) => setForm((p) => ({ ...p, type: v }))} />
         <TextInput style={styles.input} placeholder="Color" value={form.color} onChangeText={(v) => setForm((p) => ({ ...p, color: v }))} />
         <TextInput style={styles.input} placeholder="Silhouette" value={form.silhouette} onChangeText={(v) => setForm((p) => ({ ...p, silhouette: v }))} />
+        <View style={styles.row}>
+          <TextInput
+            style={[styles.input, styles.inputHalf]}
+            placeholder="Stock qty (e.g. 5)"
+            value={String(form.stockQty)}
+            onChangeText={(v) => setForm((p) => ({ ...p, stockQty: v.replace(/[^\d]/g, "") }))}
+            keyboardType="number-pad"
+          />
+          <TextInput
+            style={[styles.input, styles.inputHalf]}
+            placeholder="Low-stock alert at (e.g. 2)"
+            value={String(form.lowStockThreshold)}
+            onChangeText={(v) => setForm((p) => ({ ...p, lowStockThreshold: v.replace(/[^\d]/g, "") }))}
+            keyboardType="number-pad"
+          />
+        </View>
         <TextInput style={styles.input} placeholder="Image URL" value={form.image} onChangeText={(v) => setForm((p) => ({ ...p, image: v }))} autoCapitalize="none" />
         <View style={styles.imagePickerRow}>
           <Pressable style={styles.secondaryBtn} onPress={pickImageFromGallery}>
@@ -148,6 +179,10 @@ export function AdminGownsScreen() {
               <Text style={styles.itemMeta}>
                 #{g.id} • {g.type} • {g.promo && g.promoPrice ? `${g.price} → ${g.promoPrice}` : g.price}
               </Text>
+              <Text style={Number(g.stockQty) <= 0 ? styles.stockOut : Number(g.stockQty) <= Number(g.lowStockThreshold || 0) ? styles.stockLow : styles.stockOk}>
+                Stock: {Number(g.stockQty) || 0}
+                {Number(g.stockQty) <= 0 ? " (out)" : Number(g.stockQty) <= Number(g.lowStockThreshold || 0) ? " (low)" : ""}
+              </Text>
             </View>
           </View>
           <View style={styles.row}>
@@ -162,6 +197,8 @@ export function AdminGownsScreen() {
               color: g.color || "",
               silhouette: g.silhouette || "",
               description: g.description || "",
+              stockQty: String(Number(g.stockQty) || 0),
+              lowStockThreshold: String(Number(g.lowStockThreshold) || 0),
             })}>
               <Text style={styles.secondaryBtnText}>Edit</Text>
             </Pressable>
@@ -197,6 +234,7 @@ const styles = StyleSheet.create({
   subtitle: { color: brand.textLight, marginTop: 4, marginBottom: 12 },
   formCard: { borderWidth: 1, borderColor: brand.border, backgroundColor: brand.white, borderRadius: 12, padding: 10, marginBottom: 14 },
   input: { borderWidth: 1, borderColor: brand.border, backgroundColor: brand.white, padding: 10, marginBottom: 8 },
+  inputHalf: { flex: 1 },
   inputDisabled: { opacity: 0.5 },
   inputArea: { minHeight: 70, textAlignVertical: "top" },
   promoRow: { flexDirection: "row", gap: 10, alignItems: "center", marginBottom: 8, paddingVertical: 4 },
@@ -217,9 +255,16 @@ const styles = StyleSheet.create({
   itemHeaderText: { flex: 1, minWidth: 0 },
   itemTitle: { color: brand.dark, fontWeight: "800", fontSize: 14 },
   itemMeta: { color: brand.textLight, marginTop: 2, fontSize: 12 },
+  stockOk: { marginTop: 4, fontSize: 12, fontWeight: "800", color: brand.text },
+  stockLow: { marginTop: 4, fontSize: 12, fontWeight: "900", color: "#a36a00" },
+  stockOut: { marginTop: 4, fontSize: 12, fontWeight: "900", color: "#b00020" },
   row: { flexDirection: "row", gap: 8 },
   secondaryBtn: { flex: 1, borderWidth: 1, borderColor: brand.border, paddingVertical: 9, backgroundColor: brand.white, borderRadius: 8 },
   secondaryBtnText: { textAlign: "center", color: brand.dark, fontWeight: "700" },
   dangerBtn: { flex: 1, paddingVertical: 9, backgroundColor: "#a82949", borderRadius: 8 },
   dangerBtnText: { textAlign: "center", color: brand.white, fontWeight: "700" },
+
+  deniedWrap: { flex: 1, justifyContent: "center", alignItems: "center", padding: 16, backgroundColor: brand.bg },
+  deniedTitle: { fontSize: 18, fontWeight: "900", color: brand.dark },
+  deniedText: { marginTop: 6, color: brand.textLight, textAlign: "center" },
 });

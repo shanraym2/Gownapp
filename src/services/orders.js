@@ -1,8 +1,18 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { pushNotification } from "./notifications";
+import { ensureInventoryFields, validateAndReserveInventoryForOrder } from "./inventory";
 
 const ORDERS_KEY = "jce_mobile_orders";
 const STATUS_FLOW = ["placed", "paid", "processing", "shipped", "completed"];
+const TRACKING_STATUS_FLOW = [
+  "order_placed",
+  "preparing_to_ship",
+  "picked_up",
+  "in_transit",
+  "arrived_hub",
+  "out_for_delivery",
+  "delivered",
+];
 
 async function loadOrders() {
   try {
@@ -18,13 +28,19 @@ async function saveOrders(orders) {
 }
 
 export async function submitOrder(order) {
+  await ensureInventoryFields();
+  const inventoryResult = await validateAndReserveInventoryForOrder(order?.items);
+  if (!inventoryResult?.ok) {
+    throw new Error(inventoryResult?.error || "Not enough stock to place this order.");
+  }
+
   const orders = await loadOrders();
   const now = new Date().toISOString();
   const newOrder = {
     ...order,
     id: Date.now(),
     status: "placed",
-    statusTimeline: [{ status: "placed", at: now, note: "Order has been placed." }],
+    statusTimeline: [],
     createdAt: order.createdAt || now,
   };
   const next = [newOrder, ...orders];
@@ -51,6 +67,11 @@ export async function getOrdersByEmail(email) {
 
 export async function getAllOrdersAdmin() {
   return loadOrders();
+}
+
+export async function getOrderById(orderId) {
+  const orders = await loadOrders();
+  return orders.find((x) => Number(x?.id) === Number(orderId)) || null;
 }
 
 export async function updateOrderStatusAdmin(orderId, nextStatus) {
@@ -81,6 +102,64 @@ export async function updateOrderStatusAdmin(orderId, nextStatus) {
     title: "Order status updated",
     body: `Order #${updated.id} is now ${targetStatus}.`,
     data: { orderId: updated.id, status: targetStatus },
+  });
+  return { ok: true, order: updated };
+}
+
+function cleanText(v) {
+  return String(v || "").trim();
+}
+
+function normalizeTrackingStatus(status) {
+  const s = cleanText(status).toLowerCase();
+  return TRACKING_STATUS_FLOW.includes(s) ? s : "in_transit";
+}
+
+function mapTrackingToOrderStatus(trackingStatus) {
+  const s = normalizeTrackingStatus(trackingStatus);
+  if (s === "delivered") return "completed";
+  if (s === "out_for_delivery" || s === "in_transit" || s === "arrived_hub" || s === "picked_up") return "shipped";
+  if (s === "preparing_to_ship") return "processing";
+  return "placed";
+}
+
+export function getTrackingStatusOptions() {
+  return TRACKING_STATUS_FLOW;
+}
+
+export async function addOrderTrackingEventAdmin(orderId, payload) {
+  const orders = await loadOrders();
+  const index = orders.findIndex((x) => Number(x.id) === Number(orderId));
+  if (index < 0) return { ok: false, error: "Order not found." };
+
+  const current = orders[index];
+  const trackingStatus = normalizeTrackingStatus(payload?.trackingStatus || payload?.status);
+  const event = {
+    status: trackingStatus,
+    title: cleanText(payload?.title) || trackingStatus.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase()),
+    note: cleanText(payload?.note) || "",
+    location: cleanText(payload?.location) || "",
+    riderName: cleanText(payload?.riderName) || "",
+    riderPhone: cleanText(payload?.riderPhone) || "",
+    at: payload?.at ? new Date(payload.at).toISOString() : new Date().toISOString(),
+  };
+
+  const timeline = Array.isArray(current.statusTimeline) ? [...current.statusTimeline] : [];
+  timeline.push(event);
+
+  const updated = {
+    ...current,
+    status: mapTrackingToOrderStatus(trackingStatus),
+    statusTimeline: timeline,
+  };
+  const next = [...orders];
+  next[index] = updated;
+  await saveOrders(next);
+  await pushNotification({
+    email: updated?.contact?.email,
+    title: "Shipment update",
+    body: `Order #${updated.id}: ${event.title}.`,
+    data: { orderId: updated.id, status: event.status },
   });
   return { ok: true, order: updated };
 }

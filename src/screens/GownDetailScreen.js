@@ -1,4 +1,4 @@
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useMemo } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { useShop } from "../context/ShopContext";
@@ -22,6 +22,8 @@ export function GownDetailScreen({ route, navigation }) {
   }
 
   const liked = favoritesSet?.has(Number(gown.id));
+  const stockQty = gown?.stockQty === undefined ? null : Number(gown.stockQty);
+  const isOutOfStock = Number.isFinite(stockQty) && stockQty <= 0;
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -45,16 +47,26 @@ export function GownDetailScreen({ route, navigation }) {
         <Text style={styles.meta}>Type: {gown.type}</Text>
         <Text style={styles.meta}>Color: {gown.color}</Text>
         <Text style={styles.meta}>Silhouette: {gown.silhouette}</Text>
+        {Number.isFinite(stockQty) ? (
+          <Text style={isOutOfStock ? styles.stockOut : styles.stockOk}>
+            {isOutOfStock ? "Out of stock" : `Only ${stockQty} left`}
+          </Text>
+        ) : null}
       </View>
 
       <Pressable
-        style={styles.btn}
+        style={[styles.btn, isOutOfStock ? styles.btnDisabled : null]}
+        disabled={isOutOfStock}
         onPress={async () => {
-          await addToCart(gown.id);
+          const result = await addToCart(gown.id);
+          if (!result?.ok) {
+            Alert.alert("Cannot add to cart", result?.reason || "Not available.");
+            return;
+          }
           navigation.navigate("Cart");
         }}
       >
-        <Text style={styles.btnText}>Add to Cart</Text>
+        <Text style={styles.btnText}>{isOutOfStock ? "Out of Stock" : "Add to Cart"}</Text>
       </Pressable>
     </ScrollView>
   );
@@ -75,6 +87,9 @@ const styles = StyleSheet.create({
   promoPrice: { fontSize: 14, color: brand.buttonAlt, fontWeight: "900", letterSpacing: 1.2, textTransform: "uppercase" },
   desc: { color: brand.textLight, lineHeight: 21, marginBottom: 10 },
   meta: { color: brand.text, fontSize: 13, marginBottom: 4 },
+  stockOk: { marginTop: 6, color: brand.textLight, fontSize: 12, fontWeight: "800" },
+  stockOut: { marginTop: 6, color: "#b00020", fontSize: 12, fontWeight: "900" },
   btn: { marginTop: 6, backgroundColor: brand.button, paddingVertical: 12, borderRadius: 9 },
+  btnDisabled: { opacity: 0.5 },
   btnText: { color: brand.white, textAlign: "center", fontWeight: "700", letterSpacing: 1.1, fontSize: 11 },
 });

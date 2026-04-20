@@ -46,19 +46,38 @@ export function ShopProvider({ children }) {
   }, []);
 
   const addToCart = async (id) => {
+    const gown = gowns.find((g) => Number(g.id) === Number(id));
+    const stockQty = gown?.stockQty === undefined ? null : Number(gown.stockQty);
+    if (Number.isFinite(stockQty) && stockQty <= 0) {
+      return { ok: false, reason: "Out of stock." };
+    }
+
     const next = [...cart];
     const item = next.find((i) => i.id === id);
-    if (item) item.qty += 1;
-    else next.push({ id, qty: 1 });
+    if (item) {
+      const nextQty = item.qty + 1;
+      if (Number.isFinite(stockQty) && nextQty > stockQty) {
+        return { ok: false, reason: `Only ${stockQty} left.` };
+      }
+      item.qty = nextQty;
+    } else {
+      next.push({ id, qty: 1 });
+    }
     setCart(next);
     await saveCart(next);
+    return { ok: true };
   };
 
   const setQty = async (id, qty) => {
+    const gown = gowns.find((g) => Number(g.id) === Number(id));
+    const stockQty = gown?.stockQty === undefined ? null : Number(gown.stockQty);
     const safeQty = Math.max(1, qty);
-    const next = cart.map((i) => (i.id === id ? { ...i, qty: safeQty } : i));
+    const cappedQty =
+      Number.isFinite(stockQty) && stockQty >= 0 ? Math.min(safeQty, stockQty) : safeQty;
+    const next = cart.map((i) => (i.id === id ? { ...i, qty: cappedQty } : i));
     setCart(next);
     await saveCart(next);
+    return { ok: true, qty: cappedQty };
   };
 
   const removeFromCart = async (id) => {

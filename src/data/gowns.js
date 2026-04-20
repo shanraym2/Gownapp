@@ -10,6 +10,8 @@ export const GOWNS = [
     color: "Ivory",
     silhouette: "A-line",
     description: "Romantic lace gown with a softly structured bodice and flowing skirt.",
+    stockQty: 5,
+    lowStockThreshold: 2,
     promo: true,
   },
   {
@@ -23,6 +25,8 @@ export const GOWNS = [
     color: "Blush",
     silhouette: "Ballgown",
     description: "Modern ball gown in satin with dramatic train and timeless neckline.",
+    stockQty: 3,
+    lowStockThreshold: 2,
     promo: true,
   },
   {
@@ -36,6 +40,8 @@ export const GOWNS = [
     color: "Floral",
     silhouette: "Fit-and-flare",
     description: "Floral embroidered gown with fitted shape and soft flare hem.",
+    stockQty: 4,
+    lowStockThreshold: 2,
     promo: true,
   },
   {
@@ -49,6 +55,8 @@ export const GOWNS = [
     color: "Champagne",
     silhouette: "Suit",
     description: "Tailored bridal suit for minimalist brides with modern style.",
+    stockQty: 2,
+    lowStockThreshold: 1,
     promo: true,
   },
   {
@@ -62,6 +70,8 @@ export const GOWNS = [
     color: "Ivory",
     silhouette: "Sheath",
     description: "Minimal crepe sheath gown with low back and clean lines.",
+    stockQty: 6,
+    lowStockThreshold: 2,
     promo: true,
   },
   {
@@ -75,6 +85,8 @@ export const GOWNS = [
     color: "Blush",
     silhouette: "A-line",
     description: "Soft blush tulle layers and handcrafted floral appliques.",
+    stockQty: 1,
+    lowStockThreshold: 1,
     promo: true,
   },
 ];
