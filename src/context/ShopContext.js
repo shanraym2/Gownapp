@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { fetchGowns } from "../services/gowns";
 import { clearUser, loadCart, loadFavorites, loadUser, saveCart, saveFavorites, saveUser } from "../utils/storage";
 import { getLastSyncAt, syncUserData } from "../services/sync";
+import { idsEqual, normalizeId } from "../utils/id";
 
 const ShopContext = createContext(null);
 
@@ -32,9 +33,17 @@ export function ShopProvider({ children }) {
         const lastSync = await getLastSyncAt();
         if (!mounted) return;
         setGowns(gownsData);
-        setCart(cartData);
+        const normalizedCart = Array.isArray(cartData)
+          ? cartData
+              .map((x) => ({
+                id: normalizeId(x?.id),
+                qty: Math.max(1, Number(x?.qty) || 1),
+              }))
+              .filter((x) => x.id)
+          : [];
+        setCart(normalizedCart);
         setUser(userData);
-        setFavoritesIds(favoritesData.map((x) => Number(x)).filter((n) => !Number.isNaN(n)));
+        setFavoritesIds(favoritesData.map((x) => normalizeId(x)).filter(Boolean));
         setLastSyncedAt(lastSync);
       } finally {
         if (mounted) setLoading(false);
@@ -45,23 +54,38 @@ export function ShopProvider({ children }) {
     };
   }, []);
 
-  const addToCart = async (id) => {
-    const gown = gowns.find((g) => Number(g.id) === Number(id));
+  const addToCart = async (id, quantity = 1) => {
+    const normalizedId = normalizeId(id);
+    const addQty = Math.max(1, Number(quantity) || 1);
+    if (!normalizedId) {
+      return { ok: false, reason: "Invalid item." };
+    }
+    if (!user?.email) {
+      return { ok: false, reason: "Please sign in first before adding items to cart.", requiresAuth: true };
+    }
+
+    const gown = gowns.find((g) => idsEqual(g.id, normalizedId));
+    if (!gown) {
+      return { ok: false, reason: "Item not found." };
+    }
     const stockQty = gown?.stockQty === undefined ? null : Number(gown.stockQty);
     if (Number.isFinite(stockQty) && stockQty <= 0) {
       return { ok: false, reason: "Out of stock." };
     }
 
     const next = [...cart];
-    const item = next.find((i) => i.id === id);
+    const item = next.find((i) => idsEqual(i.id, normalizedId));
     if (item) {
-      const nextQty = item.qty + 1;
+      const nextQty = item.qty + addQty;
       if (Number.isFinite(stockQty) && nextQty > stockQty) {
         return { ok: false, reason: `Only ${stockQty} left.` };
       }
       item.qty = nextQty;
     } else {
-      next.push({ id, qty: 1 });
+      if (Number.isFinite(stockQty) && addQty > stockQty) {
+        return { ok: false, reason: `Only ${stockQty} left.` };
+      }
+      next.push({ id: normalizedId, qty: addQty });
     }
     setCart(next);
     await saveCart(next);
@@ -69,19 +93,21 @@ export function ShopProvider({ children }) {
   };
 
   const setQty = async (id, qty) => {
-    const gown = gowns.find((g) => Number(g.id) === Number(id));
+    const normalizedId = normalizeId(id);
+    const gown = gowns.find((g) => idsEqual(g.id, normalizedId));
     const stockQty = gown?.stockQty === undefined ? null : Number(gown.stockQty);
     const safeQty = Math.max(1, qty);
     const cappedQty =
       Number.isFinite(stockQty) && stockQty >= 0 ? Math.min(safeQty, stockQty) : safeQty;
-    const next = cart.map((i) => (i.id === id ? { ...i, qty: cappedQty } : i));
+    const next = cart.map((i) => (idsEqual(i.id, normalizedId) ? { ...i, qty: cappedQty } : i));
     setCart(next);
     await saveCart(next);
     return { ok: true, qty: cappedQty };
   };
 
   const removeFromCart = async (id) => {
-    const next = cart.filter((i) => i.id !== id);
+    const normalizedId = normalizeId(id);
+    const next = cart.filter((i) => !idsEqual(i.id, normalizedId));
     setCart(next);
     await saveCart(next);
   };
@@ -118,7 +144,7 @@ export function ShopProvider({ children }) {
   const cartDetailed = useMemo(() => {
     return cart
       .map((c) => {
-        const gown = gowns.find((g) => Number(g.id) === Number(c.id));
+        const gown = gowns.find((g) => idsEqual(g.id, c.id));
         if (!gown) return null;
         const priceNum = Number(String(gown.price || "").replace(/[^\d]/g, "")) || 0;
         return { ...gown, qty: c.qty, subtotal: priceNum * c.qty, priceNum };
@@ -131,19 +157,19 @@ export function ShopProvider({ children }) {
     [cartDetailed]
   );
 
-  const favoritesSet = useMemo(() => new Set(favoritesIds.map((id) => Number(id))), [favoritesIds]);
+  const favoritesSet = useMemo(() => new Set(favoritesIds.map((id) => normalizeId(id))), [favoritesIds]);
 
   const favoritesDetailed = useMemo(() => {
     return favoritesIds
-      .map((id) => gowns.find((g) => Number(g.id) === Number(id)))
+      .map((id) => gowns.find((g) => idsEqual(g.id, id)))
       .filter(Boolean);
   }, [favoritesIds, gowns]);
 
   const toggleFavorite = async (id) => {
-    const numericId = Number(id);
-    const next = favoritesIds.includes(numericId)
-      ? favoritesIds.filter((x) => Number(x) !== numericId)
-      : [...favoritesIds, numericId];
+    const normalizedId = normalizeId(id);
+    const next = favoritesIds.map(normalizeId).includes(normalizedId)
+      ? favoritesIds.map(normalizeId).filter((x) => x !== normalizedId)
+      : [...favoritesIds.map(normalizeId), normalizedId];
     setFavoritesIds(next);
     await saveFavorites(next);
   };

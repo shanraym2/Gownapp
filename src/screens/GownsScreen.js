@@ -3,6 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useMemo, useState } from "react";
 import { useShop } from "../context/ShopContext";
 import { brand } from "../theme/brand";
+import { normalizeId } from "../utils/id";
 
 export function GownsScreen({ navigation, route }) {
   const { gowns, loading, favoritesSet, toggleFavorite } = useShop();
@@ -119,9 +120,9 @@ export function GownsScreen({ navigation, route }) {
           <View style={styles.card} key={item.id}>
             <Pressable style={styles.favBtn} onPress={() => toggleFavorite(item.id)}>
               <Ionicons
-                name={favoritesSet?.has(Number(item.id)) ? "heart" : "heart-outline"}
+                name={favoritesSet?.has(normalizeId(item.id)) ? "heart" : "heart-outline"}
                 size={18}
-                color={favoritesSet?.has(Number(item.id)) ? brand.buttonAlt : brand.textLight}
+                color={favoritesSet?.has(normalizeId(item.id)) ? brand.buttonAlt : brand.textLight}
               />
             </Pressable>
             <Image source={{ uri: item.image }} style={styles.cardImage} />

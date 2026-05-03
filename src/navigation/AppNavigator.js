@@ -1,7 +1,7 @@
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { brand } from "../theme/brand";
 import { useShop } from "../context/ShopContext";
 import { HomeScreen } from "../screens/HomeScreen";
@@ -24,6 +24,8 @@ import { AdminGownsScreen } from "../screens/AdminGownsScreen";
 import { AdminStatsScreen } from "../screens/AdminStatsScreen";
 import { AdminUsersScreen } from "../screens/AdminUsersScreen";
 import { canAccess } from "../utils/access";
+import { OrderPlacedScreen } from "../screens/OrderPlacedScreen";
+import { OrderProofSubmittedScreen } from "../screens/OrderProofSubmittedScreen";
 
 const Stack = createNativeStackNavigator();
 const Tabs = createBottomTabNavigator();
@@ -43,8 +45,8 @@ function TabsNavigator() {
           if (route.name === "Home") {
             return <Ionicons name="home" size={size} color={color} />;
           }
-          if (route.name === "AR Try-On") {
-            return <MaterialCommunityIcons name="face-man-shimmer" size={size} color={color} />;
+          if (route.name === "Catalogue") {
+            return <Ionicons name="storefront-outline" size={size} color={color} />;
           }
           if (route.name === "Favorites") {
             return <Ionicons name="heart" size={size} color={color} />;
@@ -57,7 +59,7 @@ function TabsNavigator() {
       })}
     >
       <Tabs.Screen name="Home" component={HomeScreen} />
-      <Tabs.Screen name="AR Try-On" component={ARTryOnScreen} />
+      <Tabs.Screen name="Catalogue" component={GownsScreen} />
       <Tabs.Screen name="Favorites" component={FavoritesScreen} />
       {isAdmin ? <Tabs.Screen name="Admin" component={AdminPanelScreen} /> : null}
       <Tabs.Screen name="Profile" component={ProfileScreen} />
@@ -71,9 +73,12 @@ export function AppNavigator() {
       <Stack.Navigator>
         <Stack.Screen name="Main" component={TabsNavigator} options={{ headerShown: false }} />
         <Stack.Screen name="Gowns" component={GownsScreen} options={{ title: "Bridal Gowns & Dresses" }} />
+        <Stack.Screen name="AR Try-On" component={ARTryOnScreen} options={{ title: "AR Try-On" }} />
         <Stack.Screen name="Cart" component={CartScreen} options={{ title: "Your Cart" }} />
         <Stack.Screen name="GownDetail" component={GownDetailScreen} options={{ title: "Gown Details" }} />
         <Stack.Screen name="Checkout" component={CheckoutScreen} />
+        <Stack.Screen name="OrderPlaced" component={OrderPlacedScreen} options={{ title: "Order Placed" }} />
+        <Stack.Screen name="OrderProofSubmitted" component={OrderProofSubmittedScreen} options={{ title: "Order Confirmation" }} />
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="Signup" component={SignupScreen} />
         <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} options={{ title: "Forgot Password" }} />

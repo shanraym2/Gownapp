@@ -253,9 +253,6 @@ export function ProfileScreen({ navigation }) {
           <Pressable style={styles.btn} onPress={() => navigation.navigate("Login")}>
             <Text style={styles.btnText}>Sign In</Text>
           </Pressable>
-          <Pressable style={styles.outline} onPress={() => navigation.navigate("Signup")}>
-            <Text style={styles.outlineText}>Create Account</Text>
-          </Pressable>
           <Pressable style={styles.outline} onPress={() => navigation.navigate("ForgotPassword")}>
             <Text style={styles.outlineText}>Reset Password</Text>
           </Pressable>

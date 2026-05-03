@@ -1,8 +1,8 @@
-import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useMemo, useState } from "react";
 import { sendLoginOtp, verifyLoginOtp } from "../services/auth";
 import { useShop } from "../context/ShopContext";
-import { loadUsers, registerUser } from "../services/authLocal";
+import { registerUser } from "../services/authLocal";
 import { getPasswordRuleChecks } from "../utils/authValidation";
 import { brand } from "../theme/brand";
 
@@ -11,8 +11,11 @@ export function SignupScreen({ navigation }) {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [otp, setOtp] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [form, setForm] = useState({
-    name: "",
+    firstName: "",
+    lastName: "",
     email: "",
     password: "",
     confirmPassword: "",
@@ -26,13 +29,13 @@ export function SignupScreen({ navigation }) {
       Alert.alert("Invalid form", "Passwords do not match.");
       return;
     }
+    const fullName = `${String(form.firstName || "").trim()} ${String(form.lastName || "").trim()}`.trim();
+    if (!fullName) {
+      Alert.alert("Invalid form", "Please provide your first and last name.");
+      return;
+    }
     setLoading(true);
     try {
-      const users = await loadUsers();
-      const exists = users.some(
-        (u) => String(u.email || "").trim().toLowerCase() === form.email.trim().toLowerCase()
-      );
-      if (exists) throw new Error("An account with this email already exists.");
       const otpResult = await sendLoginOtp(form.email.trim());
       Alert.alert("OTP (dev mode)", `Use this code: ${otpResult.otp}`);
       setStep(2);
@@ -47,7 +50,11 @@ export function SignupScreen({ navigation }) {
     setLoading(true);
     try {
       await verifyLoginOtp(form.email.trim(), otp.trim());
-      const result = await registerUser(form);
+      const result = await registerUser({
+        name: `${String(form.firstName || "").trim()} ${String(form.lastName || "").trim()}`.trim(),
+        email: form.email,
+        password: form.password,
+      });
       if (!result.ok || !result.user) throw new Error(result.error || "Unable to create account.");
       await login({
         id: result.user.id,
@@ -64,27 +71,100 @@ export function SignupScreen({ navigation }) {
   };
 
   return (
-    <View style={styles.screen}>
-      <Text style={styles.title}>Create Your Account</Text>
+    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+      <Text style={styles.title}>Register</Text>
       {step === 1 ? (
-        <>
-          <TextInput style={styles.input} placeholder="Full name" value={form.name} onChangeText={(v) => onChange("name", v)} />
-          <TextInput style={styles.input} placeholder="Email address" value={form.email} onChangeText={(v) => onChange("email", v)} autoCapitalize="none" keyboardType="email-address" />
-          <TextInput style={styles.input} placeholder="Password" value={form.password} onChangeText={(v) => onChange("password", v)} secureTextEntry />
-          <TextInput style={styles.input} placeholder="Confirm password" value={form.confirmPassword} onChangeText={(v) => onChange("confirmPassword", v)} secureTextEntry />
-          <Text style={styles.rule}>- At least 8 characters: {checks.length ? "OK" : "Missing"}</Text>
-          <Text style={styles.rule}>- Includes at least one letter: {checks.letter ? "OK" : "Missing"}</Text>
-          <Text style={styles.rule}>- Includes at least one number: {checks.number ? "OK" : "Missing"}</Text>
+        <View style={styles.card}>
+          <View style={styles.row}>
+            <View style={styles.half}>
+              <Text style={styles.label}>First Name</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="First name"
+                placeholderTextColor="#7A6A73"
+                value={form.firstName}
+                onChangeText={(v) => onChange("firstName", v)}
+              />
+            </View>
+            <View style={styles.half}>
+              <Text style={styles.label}>Last Name</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Last name"
+                placeholderTextColor="#7A6A73"
+                value={form.lastName}
+                onChangeText={(v) => onChange("lastName", v)}
+              />
+            </View>
+          </View>
+
+          <Text style={styles.label}>Email</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="you@example.com"
+            placeholderTextColor="#7A6A73"
+            value={form.email}
+            onChangeText={(v) => onChange("email", v)}
+            autoCapitalize="none"
+            keyboardType="email-address"
+          />
+
+          <Text style={styles.label}>Password</Text>
+          <View style={styles.inputWithAction}>
+            <TextInput
+              style={styles.inputControl}
+              placeholder="Create a password"
+              placeholderTextColor="#7A6A73"
+              value={form.password}
+              onChangeText={(v) => onChange("password", v)}
+              secureTextEntry={!showPassword}
+            />
+            <Pressable onPress={() => setShowPassword((prev) => !prev)}>
+              <Text style={styles.toggleText}>{showPassword ? "HIDE" : "SHOW"}</Text>
+            </Pressable>
+          </View>
+          <Text style={[styles.rule, checks.length ? styles.ruleOk : styles.rulePending]}>
+            {checks.length ? "✓" : "-"} At least 8 characters
+          </Text>
+          <Text style={[styles.rule, checks.letter ? styles.ruleOk : styles.rulePending]}>
+            {checks.letter ? "✓" : "-"} At least one letter
+          </Text>
+          <Text style={[styles.rule, checks.number ? styles.ruleOk : styles.rulePending]}>
+            {checks.number ? "✓" : "-"} At least one number
+          </Text>
+
+          <Text style={[styles.label, styles.confirmLabel]}>Confirm Password</Text>
+          <View style={styles.inputWithAction}>
+            <TextInput
+              style={styles.inputControl}
+              placeholder="Confirm your password"
+              placeholderTextColor="#7A6A73"
+              value={form.confirmPassword}
+              onChangeText={(v) => onChange("confirmPassword", v)}
+              secureTextEntry={!showConfirmPassword}
+            />
+            <Pressable onPress={() => setShowConfirmPassword((prev) => !prev)}>
+              <Text style={styles.toggleText}>{showConfirmPassword ? "HIDE" : "SHOW"}</Text>
+            </Pressable>
+          </View>
+
           <Pressable style={styles.btn} onPress={sendOtp} disabled={loading}>
-            <Text style={styles.btnText}>{loading ? "Sending code..." : "Create Account and Send Code"}</Text>
+            <Text style={styles.btnText}>{loading ? "Sending code..." : "Register"}</Text>
           </Pressable>
-        </>
+          <Text style={styles.bottomText}>
+            Already have an account?{" "}
+            <Text style={styles.link} onPress={() => navigation.navigate("Login")}>
+              Log in
+            </Text>
+          </Text>
+        </View>
       ) : (
-        <>
+        <View style={styles.card}>
           <Text style={styles.note}>Enter the 6-digit verification code sent to {form.email}.</Text>
           <TextInput
             style={styles.input}
             placeholder="000000"
+            placeholderTextColor="#7A6A73"
             value={otp}
             onChangeText={(v) => setOtp(v.replace(/\D/g, ""))}
             keyboardType="number-pad"
@@ -93,18 +173,49 @@ export function SignupScreen({ navigation }) {
           <Pressable style={styles.btn} onPress={verifyOtp} disabled={loading}>
             <Text style={styles.btnText}>{loading ? "Verifying..." : "Verify and Create Account"}</Text>
           </Pressable>
-        </>
+        </View>
       )}
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: brand.bg, padding: 16 },
-  title: { fontSize: 30, fontWeight: "700", color: brand.dark, marginBottom: 14, fontStyle: "italic" },
-  input: { borderWidth: 1, borderColor: brand.border, padding: 11, marginBottom: 10, backgroundColor: brand.white },
-  rule: { color: brand.textLight, fontSize: 12, marginBottom: 4 },
-  note: { color: brand.textLight, marginBottom: 10 },
-  btn: { marginTop: 10, backgroundColor: brand.button, paddingVertical: 12 },
-  btnText: { color: brand.white, textAlign: "center", fontWeight: "700", letterSpacing: 1.1, fontSize: 11 },
+  screen: { flex: 1, backgroundColor: "#F7F3F8" },
+  content: { padding: 16, paddingBottom: 32 },
+  title: { fontSize: 34, fontWeight: "700", color: brand.dark, marginBottom: 12, fontStyle: "italic" },
+  card: { backgroundColor: "#F9F8FA", borderWidth: 1, borderColor: "#EFE9ED", padding: 14 },
+  row: { flexDirection: "row", gap: 10 },
+  half: { flex: 1 },
+  label: { color: "#35495F", fontSize: 11, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 6, marginTop: 2, fontWeight: "600" },
+  input: {
+    borderWidth: 1,
+    borderColor: "#D9CDD3",
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+    backgroundColor: brand.white,
+    color: "#1C2430",
+    fontSize: 16,
+    lineHeight: 22,
+  },
+  inputWithAction: {
+    borderWidth: 1,
+    borderColor: "#D9CDD3",
+    backgroundColor: brand.white,
+    marginBottom: 6,
+    paddingRight: 12,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  inputControl: { flex: 1, paddingVertical: 11, paddingHorizontal: 12, color: "#1C2430", fontSize: 16, lineHeight: 22 },
+  toggleText: { color: "#4A5A6D", fontWeight: "700", letterSpacing: 1 },
+  rule: { color: "#4A5A6D", fontSize: 13, marginBottom: 4 },
+  ruleOk: { color: "#2E7D32", fontWeight: "700" },
+  rulePending: { color: "#4A5A6D" },
+  confirmLabel: { marginTop: 14 },
+  note: { color: "#4A5A6D", marginBottom: 10, fontSize: 14, lineHeight: 20 },
+  btn: { marginTop: 14, backgroundColor: brand.button, paddingVertical: 14 },
+  btnText: { color: brand.white, textAlign: "center", fontWeight: "800", letterSpacing: 1.6, fontSize: 12, textTransform: "uppercase" },
+  bottomText: { color: "#4A5A6D", marginTop: 18, fontSize: 14 },
+  link: { textDecorationLine: "underline", color: "#2E3D52" },
 });

@@ -16,6 +16,7 @@ import { posePluginToLandmarks } from "../ar/posePluginToLandmarks";
 import { smoothPoseTransform } from "../ar/smoothPoseTransform";
 import { useShop } from "../context/ShopContext";
 import { brand } from "../theme/brand";
+import { idsEqual } from "../utils/id";
 import { loadArFitProfiles, saveArFitProfiles } from "../utils/storage";
 
 const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
@@ -61,7 +62,7 @@ export function ARTryOnScreen() {
     const fallback = gowns[0] || null;
     if (!gowns.length) return null;
     if (!selectedId) return fallback;
-    return gowns.find((g) => Number(g.id) === Number(selectedId)) || fallback;
+    return gowns.find((g) => idsEqual(g.id, selectedId)) || fallback;
   }, [gowns, selectedId]);
 
   useEffect(() => {
@@ -568,7 +569,7 @@ export function ARTryOnScreen() {
       <Text style={styles.pickerTitle}>Choose Gown</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pickerRow} nestedScrollEnabled>
         {gowns.map((g) => {
-          const active = Number(g.id) === Number(selectedGown.id);
+          const active = idsEqual(g.id, selectedGown.id);
           return (
             <Pressable
               key={g.id}

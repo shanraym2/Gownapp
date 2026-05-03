@@ -1,9 +1,10 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { pushNotification } from "./notifications";
-import { ensureInventoryFields, validateAndReserveInventoryForOrder } from "./inventory";
+import { normalizeId } from "../utils/id";
 
-const ORDERS_KEY = "jce_mobile_orders";
-const STATUS_FLOW = ["placed", "paid", "processing", "shipped", "completed"];
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || "https://plankton-app-blym2.ondigitalocean.app";
+const ADMIN_SECRET = process.env.EXPO_PUBLIC_ADMIN_SECRET || "qweqwe123";
+
+const STATUS_FLOW = ["placed", "paid", "processing", "shipped", "completed", "cancelled", "refunded"];
 const TRACKING_STATUS_FLOW = [
   "order_placed",
   "preparing_to_ship",
@@ -14,64 +15,278 @@ const TRACKING_STATUS_FLOW = [
   "delivered",
 ];
 
-async function loadOrders() {
+function makeUrl(path) {
+  return `${String(API_BASE_URL).replace(/\/+$/, "")}${path}`;
+}
+
+function toMoney(value) {
+  return `P${Number(value || 0).toLocaleString("en-PH")}`;
+}
+
+function parseAmount(value) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  const clean = String(value || "").replace(/[^\d.-]/g, "");
+  const parsed = Number.parseFloat(clean);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+async function requestJson(path, options = {}) {
+  const response = await fetch(makeUrl(path), options);
+  let body = null;
   try {
-    const raw = await AsyncStorage.getItem(ORDERS_KEY);
-    return raw ? JSON.parse(raw) : [];
+    body = await response.json();
+  } catch {
+    body = null;
+  }
+  if (!response.ok) {
+    throw new Error(body?.error || `Request failed (${response.status}).`);
+  }
+  return body;
+}
+
+async function resolveBackendUser({ email, firstName, lastName, fullName }) {
+  const cleanEmail = String(email || "").trim().toLowerCase();
+  if (!cleanEmail) throw new Error("Missing customer email.");
+  const resolvedName =
+    String(fullName || "").trim() ||
+    `${String(firstName || "").trim()} ${String(lastName || "").trim()}`.trim();
+  const data = await requestJson("/api/mobile/ensure-user", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-admin-secret": ADMIN_SECRET,
+    },
+    body: JSON.stringify({ email: cleanEmail, name: resolvedName }),
+  });
+  const userId = String(data?.userId || "").trim();
+  if (!userId) throw new Error("Unable to resolve backend user.");
+  return userId;
+}
+
+function mapOrderForMobile(order) {
+  const contactName = String(order?.customerName || order?.contact?.name || "").trim();
+  const parts = contactName.split(/\s+/).filter(Boolean);
+  const firstName = String(order?.contact?.firstName || parts[0] || "").trim();
+  const lastName = String(order?.contact?.lastName || parts.slice(1).join(" ") || "").trim();
+  const paymentProofStatus =
+    String(order?.proofStatus || order?.paymentProofStatus || "").trim().toLowerCase() || "pending";
+  const paymentProofImage =
+    String(order?.proofImageUrl || order?.paymentProof?.imageUri || "").trim() || "";
+
+  const rawItems = Array.isArray(order?.items) ? order.items : [];
+  const items = rawItems.map((it, index) => {
+    const qty = Number(it?.qty ?? it?.quantity ?? 1) || 1;
+    const subtotal = Number(it?.subtotal ?? it?.lineTotal) || 0;
+    const priceValue =
+      it?.price !== undefined ? parseAmount(it?.price) : qty > 0 ? subtotal / qty : Number(it?.unitPrice || 0);
+    return {
+      id: normalizeId(it?.id || it?.gownId || index),
+      name: String(it?.name || it?.gownName || "Gown").trim(),
+      image: String(it?.image || "").trim(),
+      size: String(it?.size || it?.sizeLabel || "").trim(),
+      qty,
+      price: toMoney(priceValue),
+      subtotal,
+    };
+  });
+
+  return {
+    id: normalizeId(order?.id),
+    orderNumber: String(order?.orderNumber || order?.order_number || "").trim() || null,
+    status: String(order?.status || "placed").toLowerCase(),
+    payment: String(order?.payment || order?.paymentMethod || "").toLowerCase(),
+    paymentStatus: String(order?.paymentStatus || "").toLowerCase(),
+    paymentProofStatus,
+    paymentProof: {
+      imageUri: paymentProofImage,
+      referenceNumber: String(order?.proofReferenceNo || order?.paymentProof?.referenceNumber || "").trim(),
+      submittedAt: order?.proofUploadedAt || order?.paymentProof?.submittedAt || null,
+    },
+    contact: {
+      firstName,
+      lastName,
+      email: String(order?.customerEmail || order?.contact?.email || "").trim().toLowerCase(),
+      phone: String(order?.customerPhone || order?.contact?.phone || "").trim(),
+    },
+    delivery: {
+      method: String(order?.deliveryMethod || order?.delivery?.method || "pickup")
+        .toLowerCase()
+        .replace("lalamove", "delivery"),
+      address: String(order?.deliveryAddress || order?.delivery?.address || "").trim(),
+    },
+    items,
+    subtotal: Number(order?.subtotal || 0),
+    total: Number(order?.total || order?.subtotal || 0),
+    createdAt: order?.placedAt || order?.createdAt || order?.updatedAt || new Date().toISOString(),
+    statusTimeline: Array.isArray(order?.statusHistory)
+      ? order.statusHistory.map((x) => ({
+          status: String(x?.status || "").toLowerCase(),
+          at: x?.changedAt || x?.at || new Date().toISOString(),
+          note: String(x?.note || "").trim(),
+        }))
+      : [],
+  };
+}
+
+async function fetchMyOrdersByUserId(userId) {
+  const data = await requestJson("/api/my-orders", {
+    headers: { "x-user-id": String(userId) },
+  });
+  return (Array.isArray(data?.orders) ? data.orders : []).map(mapOrderForMobile);
+}
+
+export async function submitOrder(order) {
+  const customerEmail = String(order?.contact?.email || "").trim().toLowerCase();
+  const firstName = String(order?.contact?.firstName || "").trim();
+  const lastName = String(order?.contact?.lastName || "").trim();
+  const userId = await resolveBackendUser({ email: customerEmail, firstName, lastName });
+
+  const deliveryMethodRaw = String(order?.delivery?.method || "pickup").toLowerCase();
+  const deliveryMethod = deliveryMethodRaw === "delivery" ? "lalamove" : "pickup";
+  const items = (Array.isArray(order?.items) ? order.items : []).map((it) => {
+    const quantity = Math.max(1, Number(it?.qty) || 1);
+    const unitPrice = parseAmount(it?.price) || (Number(it?.subtotal) || 0) / quantity;
+    return {
+      gownId: normalizeId(it?.id) || null,
+      gownName: String(it?.name || "Gown").trim(),
+      sizeLabel: String(it?.size || "").trim() || null,
+      quantity,
+      unitPrice,
+    };
+  });
+
+  const customerName = `${firstName} ${lastName}`.trim() || customerEmail.split("@")[0];
+  const payload = {
+    customerEmail,
+    customerName,
+    paymentMethod: String(order?.payment || "gcash").toLowerCase(),
+    deliveryMethod,
+    deliveryAddress: String(order?.delivery?.address || "").trim(),
+    items,
+    subtotal: Number(order?.subtotal || 0),
+    total: Number(order?.total || order?.subtotal || 0),
+    notes: "",
+  };
+
+  const created = await requestJson("/api/orders", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-user-id": String(userId),
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const freshOrders = await fetchMyOrdersByUserId(userId);
+  const newId = normalizeId(created?.orderId);
+  const placedOrder = freshOrders.find((x) => normalizeId(x.id) === newId) || {
+    id: newId,
+    orderNumber: created?.orderNumber || null,
+    ...mapOrderForMobile({
+      id: newId,
+      orderNumber: created?.orderNumber,
+      contact: order?.contact,
+      delivery: order?.delivery,
+      payment: order?.payment,
+      items: order?.items,
+      subtotal: order?.subtotal,
+      total: order?.total,
+      status: "placed",
+      createdAt: new Date().toISOString(),
+    }),
+  };
+
+  await pushNotification({
+    email: customerEmail,
+    title: "Order placed",
+    body: `Order #${placedOrder.orderNumber || placedOrder.id} has been placed.`,
+    data: { orderId: placedOrder.id, status: placedOrder.status },
+  });
+
+  return { ok: true, order: placedOrder };
+}
+
+export async function getOrdersByEmail(email) {
+  try {
+    const userId = await resolveBackendUser({ email });
+    return await fetchMyOrdersByUserId(userId);
   } catch {
     return [];
   }
 }
 
-async function saveOrders(orders) {
-  await AsyncStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
-}
-
-export async function submitOrder(order) {
-  await ensureInventoryFields();
-  const inventoryResult = await validateAndReserveInventoryForOrder(order?.items);
-  if (!inventoryResult?.ok) {
-    throw new Error(inventoryResult?.error || "Not enough stock to place this order.");
-  }
-
-  const orders = await loadOrders();
-  const now = new Date().toISOString();
-  const newOrder = {
-    ...order,
-    id: Date.now(),
-    status: "placed",
-    statusTimeline: [],
-    createdAt: order.createdAt || now,
-  };
-  const next = [newOrder, ...orders];
-  await saveOrders(next);
-  await pushNotification({
-    email: order?.contact?.email,
-    title: "Order placed",
-    body: `Order #${newOrder.id} has been placed.`,
-    data: { orderId: newOrder.id, status: "placed" },
-  });
-  return { ok: true, order: newOrder };
-}
-
-export async function getOrdersByEmail(email) {
-  const cleanEmail = String(email || "").trim().toLowerCase();
-  const orders = await loadOrders();
-  return orders.filter(
-    (o) =>
-      String(o?.contact?.email || "")
-        .trim()
-        .toLowerCase() === cleanEmail
-  );
-}
-
 export async function getAllOrdersAdmin() {
-  return loadOrders();
+  const data = await requestJson("/api/admin/orders", {
+    headers: { "x-admin-secret": ADMIN_SECRET },
+  });
+  return (Array.isArray(data?.orders) ? data.orders : []).map(mapOrderForMobile);
 }
 
 export async function getOrderById(orderId) {
-  const orders = await loadOrders();
-  return orders.find((x) => Number(x?.id) === Number(orderId)) || null;
+  const targetId = normalizeId(orderId);
+  if (!targetId) return null;
+  const data = await getAllOrdersAdmin();
+  return data.find((x) => normalizeId(x?.id) === targetId) || null;
+}
+
+export function getOrderStatusOptions() {
+  return STATUS_FLOW;
+}
+
+export async function submitOrderPaymentProof(orderId, payload) {
+  try {
+    const current = await getOrderById(orderId);
+    if (!current) return { ok: false, error: "Order not found." };
+
+    const email = String(current?.contact?.email || "").trim().toLowerCase();
+    const userId = await resolveBackendUser({ email });
+    const image = String(payload?.imageUri || "").trim();
+    const referenceNo = String(payload?.referenceNumber || "").trim();
+
+    await requestJson("/api/orders/upload-proof", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-user-id": String(userId),
+      },
+      body: JSON.stringify({
+        orderId: normalizeId(orderId),
+        image,
+        referenceNo,
+      }),
+    });
+
+    const latest = await getOrderById(orderId);
+    return { ok: true, order: latest || current };
+  } catch (e) {
+    return { ok: false, error: e?.message || "Could not submit payment proof." };
+  }
+}
+
+export async function reviewOrderPaymentProofAdmin(orderId, payload) {
+  const action = String(payload?.action || "").trim().toLowerCase();
+  if (!["verify", "reject"].includes(action)) {
+    return { ok: false, error: "Invalid review action." };
+  }
+  try {
+    await requestJson("/api/admin/orders", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "x-admin-secret": ADMIN_SECRET,
+      },
+      body: JSON.stringify({
+        action: action === "verify" ? "verify-payment" : "reject-payment",
+        orderId: normalizeId(orderId),
+        referenceNo: String(payload?.referenceNumber || "").trim(),
+        reason: String(payload?.reason || "").trim(),
+      }),
+    });
+    const latest = await getOrderById(orderId);
+    return { ok: true, order: latest };
+  } catch (e) {
+    return { ok: false, error: e?.message || "Could not review payment proof." };
+  }
 }
 
 export async function updateOrderStatusAdmin(orderId, nextStatus) {
@@ -79,87 +294,30 @@ export async function updateOrderStatusAdmin(orderId, nextStatus) {
   if (!STATUS_FLOW.includes(targetStatus)) {
     return { ok: false, error: "Invalid status." };
   }
-  const orders = await loadOrders();
-  const index = orders.findIndex((x) => Number(x.id) === Number(orderId));
-  if (index < 0) return { ok: false, error: "Order not found." };
-  const current = orders[index];
-  const timeline = Array.isArray(current.statusTimeline) ? [...current.statusTimeline] : [];
-  timeline.push({
-    status: targetStatus,
-    at: new Date().toISOString(),
-    note: `Admin set status to ${targetStatus}.`,
-  });
-  const updated = {
-    ...current,
-    status: targetStatus,
-    statusTimeline: timeline,
-  };
-  const next = [...orders];
-  next[index] = updated;
-  await saveOrders(next);
-  await pushNotification({
-    email: updated?.contact?.email,
-    title: "Order status updated",
-    body: `Order #${updated.id} is now ${targetStatus}.`,
-    data: { orderId: updated.id, status: targetStatus },
-  });
-  return { ok: true, order: updated };
-}
-
-function cleanText(v) {
-  return String(v || "").trim();
-}
-
-function normalizeTrackingStatus(status) {
-  const s = cleanText(status).toLowerCase();
-  return TRACKING_STATUS_FLOW.includes(s) ? s : "in_transit";
-}
-
-function mapTrackingToOrderStatus(trackingStatus) {
-  const s = normalizeTrackingStatus(trackingStatus);
-  if (s === "delivered") return "completed";
-  if (s === "out_for_delivery" || s === "in_transit" || s === "arrived_hub" || s === "picked_up") return "shipped";
-  if (s === "preparing_to_ship") return "processing";
-  return "placed";
+  try {
+    await requestJson("/api/admin/orders", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "x-admin-secret": ADMIN_SECRET,
+      },
+      body: JSON.stringify({
+        action: "status",
+        orderId: normalizeId(orderId),
+        status: targetStatus,
+      }),
+    });
+    const latest = await getOrderById(orderId);
+    return { ok: true, order: latest };
+  } catch (e) {
+    return { ok: false, error: e?.message || "Could not update order status." };
+  }
 }
 
 export function getTrackingStatusOptions() {
   return TRACKING_STATUS_FLOW;
 }
 
-export async function addOrderTrackingEventAdmin(orderId, payload) {
-  const orders = await loadOrders();
-  const index = orders.findIndex((x) => Number(x.id) === Number(orderId));
-  if (index < 0) return { ok: false, error: "Order not found." };
-
-  const current = orders[index];
-  const trackingStatus = normalizeTrackingStatus(payload?.trackingStatus || payload?.status);
-  const event = {
-    status: trackingStatus,
-    title: cleanText(payload?.title) || trackingStatus.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase()),
-    note: cleanText(payload?.note) || "",
-    location: cleanText(payload?.location) || "",
-    riderName: cleanText(payload?.riderName) || "",
-    riderPhone: cleanText(payload?.riderPhone) || "",
-    at: payload?.at ? new Date(payload.at).toISOString() : new Date().toISOString(),
-  };
-
-  const timeline = Array.isArray(current.statusTimeline) ? [...current.statusTimeline] : [];
-  timeline.push(event);
-
-  const updated = {
-    ...current,
-    status: mapTrackingToOrderStatus(trackingStatus),
-    statusTimeline: timeline,
-  };
-  const next = [...orders];
-  next[index] = updated;
-  await saveOrders(next);
-  await pushNotification({
-    email: updated?.contact?.email,
-    title: "Shipment update",
-    body: `Order #${updated.id}: ${event.title}.`,
-    data: { orderId: updated.id, status: event.status },
-  });
-  return { ok: true, order: updated };
+export async function addOrderTrackingEventAdmin() {
+  return { ok: false, error: "Tracking timeline update endpoint is not available yet on backend." };
 }

@@ -7,7 +7,7 @@ function formatPrice(n) {
 }
 
 export function CartScreen({ navigation }) {
-  const { cartDetailed, subtotal, setQty, removeFromCart } = useShop();
+  const { cartDetailed, subtotal, setQty, removeFromCart, user } = useShop();
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
@@ -60,7 +60,17 @@ export function CartScreen({ navigation }) {
             </View>
           ))}
           <Text style={styles.total}>Subtotal: {formatPrice(subtotal)}</Text>
-          <Pressable style={styles.checkoutBtn} onPress={() => navigation.navigate("Checkout")}>
+          <Pressable
+            style={styles.checkoutBtn}
+            onPress={() => {
+              if (!user?.email) {
+                Alert.alert("Sign in required", "Please sign in first before placing an order.");
+                navigation.navigate("Login");
+                return;
+              }
+              navigation.navigate("Checkout");
+            }}
+          >
             <Text style={styles.checkoutText}>Continue to Checkout</Text>
           </Pressable>
         </>

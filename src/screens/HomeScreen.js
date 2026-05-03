@@ -5,6 +5,7 @@ import { useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { useShop } from "../context/ShopContext";
 import { brand } from "../theme/brand";
+import { normalizeId } from "../utils/id";
 
 export function HomeScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -44,15 +45,6 @@ export function HomeScreen({ navigation }) {
       return catOk && qOk;
     });
   }, [gowns, query, activeCategory]);
-
-  const carouselItems = useMemo(() => {
-    const imgs = gowns.slice(0, 5).map((g) => ({
-      id: g.id,
-      title: g.name,
-      image: g.image,
-    }));
-    return imgs.length ? imgs : [{ id: "fallback", title: "JCE Bridal", image: fallbackImage }];
-  }, [gowns]);
 
   const featuredGowns = useMemo(() => filtered.slice(0, 4), [filtered]);
 
@@ -167,35 +159,6 @@ export function HomeScreen({ navigation }) {
         </View>
       ) : null}
 
-      <ScrollView
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        style={styles.carousel}
-        contentContainerStyle={styles.carouselContent}
-      >
-        {carouselItems.map((c) => (
-          <Pressable
-            key={String(c.id)}
-            style={styles.carouselCard}
-            onPress={() => (typeof c.id === "number" ? navigation.navigate("GownDetail", { id: c.id }) : null)}
-          >
-            <Image source={{ uri: c.image || fallbackImage }} style={styles.carouselImage} />
-            <View style={styles.carouselOverlay}>
-              <Text style={styles.carouselKicker}>JCE 2026 COLLECTION</Text>
-              <Text style={styles.carouselTitle} numberOfLines={2}>
-                {c.title}
-              </Text>
-              <View style={styles.carouselActions}>
-                <View style={styles.pill}>
-                  <Text style={styles.pillText}>SHOP NOW</Text>
-                </View>
-              </View>
-            </View>
-          </Pressable>
-        ))}
-      </ScrollView>
-
       <Pressable style={styles.arCta} onPress={() => navigation.navigate("AR Try-On")}>
         <View style={styles.arCtaHeader}>
           <View style={styles.arIconCircle}>
@@ -294,9 +257,9 @@ export function HomeScreen({ navigation }) {
               </Pressable>
               <Pressable style={styles.favBtn} onPress={() => toggleFavorite(g.id)}>
                 <Ionicons
-                  name={favoritesSet?.has(Number(g.id)) ? "heart" : "heart-outline"}
+                  name={favoritesSet?.has(normalizeId(g.id)) ? "heart" : "heart-outline"}
                   size={18}
-                  color={favoritesSet?.has(Number(g.id)) ? brand.buttonAlt : brand.textLight}
+                  color={favoritesSet?.has(normalizeId(g.id)) ? brand.buttonAlt : brand.textLight}
                 />
               </Pressable>
             </View>
@@ -322,9 +285,9 @@ export function HomeScreen({ navigation }) {
               </Pressable>
               <Pressable style={styles.favBtn} onPress={() => toggleFavorite(g.id)}>
                 <Ionicons
-                  name={favoritesSet?.has(Number(g.id)) ? "heart" : "heart-outline"}
+                  name={favoritesSet?.has(normalizeId(g.id)) ? "heart" : "heart-outline"}
                   size={18}
-                  color={favoritesSet?.has(Number(g.id)) ? brand.buttonAlt : brand.textLight}
+                  color={favoritesSet?.has(normalizeId(g.id)) ? brand.buttonAlt : brand.textLight}
                 />
               </Pressable>
             </View>
@@ -350,9 +313,9 @@ export function HomeScreen({ navigation }) {
               </Pressable>
               <Pressable style={styles.favBtn} onPress={() => toggleFavorite(g.id)}>
                 <Ionicons
-                  name={favoritesSet?.has(Number(g.id)) ? "heart" : "heart-outline"}
+                  name={favoritesSet?.has(normalizeId(g.id)) ? "heart" : "heart-outline"}
                   size={18}
-                  color={favoritesSet?.has(Number(g.id)) ? brand.buttonAlt : brand.textLight}
+                  color={favoritesSet?.has(normalizeId(g.id)) ? brand.buttonAlt : brand.textLight}
                 />
               </Pressable>
             </View>
@@ -416,17 +379,6 @@ const styles = StyleSheet.create({
     gap: 8,
   },
 
-  carousel: { paddingHorizontal: 16 },
-  carouselContent: { gap: 12 },
-  carouselCard: { width: 340, height: 210, borderRadius: 16, overflow: "hidden", borderWidth: 1, borderColor: brand.border },
-  carouselImage: { width: "100%", height: "100%" },
-  carouselOverlay: { position: "absolute", left: 12, right: 12, bottom: 12, backgroundColor: brand.white, borderRadius: 14, padding: 12 },
-  carouselKicker: { color: brand.textLight, fontSize: 10, letterSpacing: 1.6, marginBottom: 6 },
-  carouselTitle: { color: brand.dark, fontSize: 18, fontWeight: "900", fontStyle: "italic", lineHeight: 20 },
-  carouselActions: { marginTop: 10, flexDirection: "row" },
-  pill: { backgroundColor: brand.button, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999 },
-  pillText: { color: brand.white, fontSize: 10, fontWeight: "900", letterSpacing: 1.1 },
-
   promoBanner: {
     marginTop: 14,
     marginHorizontal: 16,
@@ -461,7 +413,7 @@ const styles = StyleSheet.create({
   promoNewPrice: { color: brand.buttonAlt, fontSize: 12, fontWeight: "900" },
 
   arCta: {
-    marginTop: 18,
+    marginTop: 8,
     marginHorizontal: 16,
     padding: 18,
     borderRadius: 20,

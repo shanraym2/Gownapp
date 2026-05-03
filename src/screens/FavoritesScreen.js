@@ -2,6 +2,7 @@ import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-nati
 import { Ionicons } from "@expo/vector-icons";
 import { useShop } from "../context/ShopContext";
 import { brand } from "../theme/brand";
+import { normalizeId } from "../utils/id";
 
 export function FavoritesScreen({ navigation }) {
   const { favoritesDetailed, favoritesSet, toggleFavorite } = useShop();
@@ -21,7 +22,7 @@ export function FavoritesScreen({ navigation }) {
       ) : (
         <View style={styles.grid}>
           {favoritesDetailed.map((g) => {
-            const liked = favoritesSet?.has(Number(g.id));
+            const liked = favoritesSet?.has(normalizeId(g.id));
             return (
               <View key={g.id} style={styles.card}>
                 <Pressable

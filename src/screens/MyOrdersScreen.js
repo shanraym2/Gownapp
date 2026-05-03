@@ -5,6 +5,7 @@ import { useShop } from "../context/ShopContext";
 import { brand } from "../theme/brand";
 import { getOrdersByEmail } from "../services/orders";
 import { formatDateTimePH } from "../utils/datetime";
+import { idsEqual } from "../utils/id";
 
 function formatPrice(num) {
   return `P${Number(num || 0).toLocaleString("en-PH")}`;
@@ -75,7 +76,7 @@ export function MyOrdersScreen({ navigation }) {
           <View style={styles.rowTop}>
             {(() => {
               const firstItem = (o.items || [])[0];
-              const gown = gowns.find((g) => Number(g?.id) === Number(firstItem?.id));
+              const gown = gowns.find((g) => idsEqual(g?.id, firstItem?.id));
               if (gown?.image) {
                 return <Image source={{ uri: gown.image }} style={styles.thumb} />;
               }

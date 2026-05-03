@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { useShop } from "../context/ShopContext";
 import { canAccess } from "../utils/access";
@@ -7,8 +7,8 @@ import { createUserAdmin, deleteUserAdmin, listUsersAdmin, updateUserRoleAdmin }
 import { brand } from "../theme/brand";
 
 const ROLE_OPTIONS = ["admin", "staff"];
-
 const EMPTY_FORM = { name: "", email: "", password: "", role: "staff" };
+const FILTER_OPTIONS = ["all", "customer", "staff", "admin"];
 
 export function AdminUsersScreen() {
   const { user } = useShop();
@@ -17,6 +17,10 @@ export function AdminUsersScreen() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [query, setQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState("all");
+  const [tab, setTab] = useState("active");
+  const [editorOpen, setEditorOpen] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -31,10 +35,24 @@ export function AdminUsersScreen() {
     }, [loadData])
   );
 
-  const staffUsers = useMemo(() => {
+  const visibleUsers = useMemo(() => {
+    const q = String(query || "").trim().toLowerCase();
     return items
-      .filter((u) => String(u?.role || "") !== "customer")
+      .filter((u) => {
+        if (roleFilter !== "all" && String(u?.role || "").toLowerCase() !== roleFilter) return false;
+        if (!q) return true;
+        const hay = [u?.name, u?.email, u?.role].map((x) => String(x || "").toLowerCase()).join(" ");
+        return hay.includes(q);
+      })
       .sort((a, b) => String(a?.email || "").localeCompare(String(b?.email || "")));
+  }, [items, query, roleFilter]);
+
+  const roleCounts = useMemo(() => {
+    const all = items.length;
+    const customer = items.filter((u) => String(u?.role || "").toLowerCase() === "customer").length;
+    const staff = items.filter((u) => String(u?.role || "").toLowerCase() === "staff").length;
+    const admin = items.filter((u) => String(u?.role || "").toLowerCase() === "admin").length;
+    return { all, customer, staff, admin };
   }, [items]);
 
   const onCreate = async () => {
@@ -44,12 +62,13 @@ export function AdminUsersScreen() {
       return;
     }
     setForm(EMPTY_FORM);
+    setEditorOpen(false);
     loadData();
     Alert.alert("Created", "Staff account created.");
   };
 
-  const onChangeRole = async (email, role) => {
-    const res = await updateUserRoleAdmin({ email, role });
+  const onChangeRole = async (id, email, role) => {
+    const res = await updateUserRoleAdmin({ id, email, role });
     if (!res.ok) {
       Alert.alert("Update failed", res.error || "Unable to update role.");
       return;
@@ -57,14 +76,22 @@ export function AdminUsersScreen() {
     loadData();
   };
 
-  const onDelete = async (email) => {
-    const res = await deleteUserAdmin({ email });
+  const onDelete = async (id, email) => {
+    const res = await deleteUserAdmin({ id, email });
     if (!res.ok) {
       Alert.alert("Delete failed", res.error || "Unable to delete user.");
       return;
     }
     loadData();
   };
+
+  const initials = useCallback((name, email) => {
+    const base = String(name || "").trim() || String(email || "").split("@")[0] || "U";
+    const parts = base.split(/\s+/).filter(Boolean);
+    if (!parts.length) return "U";
+    if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
+    return `${parts[0].slice(0, 1)}${parts[1].slice(0, 1)}`.toUpperCase();
+  }, []);
 
   if (!allowed) {
     return (
@@ -75,80 +102,166 @@ export function AdminUsersScreen() {
     );
   }
 
+  const tabUsers = useMemo(() => {
+    if (tab === "archived") return visibleUsers.filter((u) => u?.isActive === false);
+    return visibleUsers.filter((u) => u?.isActive !== false);
+  }, [tab, visibleUsers]);
+
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Users</Text>
-      <Text style={styles.subtitle}>Create staff accounts and assign access levels.</Text>
-
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Add staff</Text>
-        <TextInput style={styles.input} placeholder="Full name" value={form.name} onChangeText={(v) => setForm((p) => ({ ...p, name: v }))} />
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          value={form.email}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          onChangeText={(v) => setForm((p) => ({ ...p, email: v }))}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Temporary password"
-          value={form.password}
-          secureTextEntry
-          onChangeText={(v) => setForm((p) => ({ ...p, password: v }))}
-        />
-        <View style={styles.roleRow}>
-          {ROLE_OPTIONS.map((r) => (
-            <Pressable
-              key={r}
-              style={[styles.rolePill, form.role === r ? styles.rolePillActive : null]}
-              onPress={() => setForm((p) => ({ ...p, role: r }))}
-            >
-              <Text style={form.role === r ? styles.roleTextActive : styles.roleText}>{r}</Text>
-            </Pressable>
-          ))}
+      <View style={styles.topRow}>
+        <View>
+          <Text style={styles.title}>Users</Text>
+          <Text style={styles.subtitle}>{roleCounts.all} registered</Text>
         </View>
-        <Pressable style={styles.primaryBtn} onPress={onCreate}>
-          <Text style={styles.primaryBtnText}>Create Staff Account</Text>
+        <Pressable style={styles.editBtn} onPress={() => Alert.alert("Profile", "Edit profile is managed on web admin for now.")}>
+          <Text style={styles.editBtnText}>Edit my profile</Text>
         </Pressable>
       </View>
 
-      <Text style={styles.sectionTitle}>Staff accounts</Text>
-      {loading ? <Text style={styles.subtitle}>Loading users...</Text> : null}
-      {!loading && staffUsers.length === 0 ? <Text style={styles.subtitle}>No staff accounts yet.</Text> : null}
+      <View style={styles.searchRow}>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search by name or email..."
+          value={query}
+          onChangeText={setQuery}
+        />
+        <Pressable style={styles.addBtn} onPress={() => setEditorOpen(true)}>
+          <Text style={styles.addBtnText}>+ Add user</Text>
+        </Pressable>
+      </View>
 
-      {staffUsers.map((u) => (
-        <View key={u.id} style={styles.userCard}>
-          <Text style={styles.userName}>{u.name || "Staff"}</Text>
-          <Text style={styles.userMeta}>{u.email}</Text>
-          <Text style={styles.userMeta}>Role: {u.role}</Text>
-
-          <View style={styles.row}>
-            {ROLE_OPTIONS.map((r) => (
-              <Pressable
-                key={`${u.id}-${r}`}
-                style={[styles.secondaryBtn, u.role === r ? styles.secondaryBtnActive : null]}
-                onPress={() => onChangeRole(u.email, r)}
-              >
-                <Text style={u.role === r ? styles.secondaryBtnTextActive : styles.secondaryBtnText}>{r}</Text>
-              </Pressable>
-            ))}
-          </View>
-
-          <Pressable
-            style={styles.dangerBtn}
-            onPress={() =>
-              Alert.alert("Delete user", `Delete ${u.email}?`, [
-                { text: "Cancel", style: "cancel" },
-                { text: "Delete", style: "destructive", onPress: () => onDelete(u.email) },
-              ])
-            }
-          >
-            <Text style={styles.dangerBtnText}>Delete</Text>
+      <View style={styles.filterRow}>
+        {FILTER_OPTIONS.map((key) => (
+          <Pressable key={key} style={[styles.filterPill, roleFilter === key ? styles.filterPillActive : null]} onPress={() => setRoleFilter(key)}>
+            <Text style={roleFilter === key ? styles.filterPillTextActive : styles.filterPillText}>
+              {key === "all" ? "All" : key[0].toUpperCase() + key.slice(1)} ({roleCounts[key] ?? 0})
+            </Text>
           </Pressable>
-        </View>
-      ))}
+        ))}
+      </View>
+
+      <View style={styles.tabRow}>
+        <Pressable style={[styles.tabBtn, tab === "active" ? styles.tabBtnActive : null]} onPress={() => setTab("active")}>
+          <Text style={tab === "active" ? styles.tabTextActive : styles.tabText}>Active</Text>
+        </Pressable>
+        <Pressable style={[styles.tabBtn, tab === "archived" ? styles.tabBtnActive : null]} onPress={() => setTab("archived")}>
+          <Text style={tab === "archived" ? styles.tabTextActive : styles.tabText}>
+            Archived ({visibleUsers.filter((u) => u?.isActive === false).length})
+          </Text>
+        </Pressable>
+      </View>
+
+      {loading ? <Text style={styles.subtitle}>Loading users...</Text> : null}
+      {!loading && tabUsers.length === 0 ? <Text style={styles.subtitle}>No users found.</Text> : null}
+
+      {tab === "active" &&
+        tabUsers.map((u) => (
+          <View key={u.id} style={styles.userCard}>
+            <View style={styles.userTop}>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>{initials(u?.name, u?.email)}</Text>
+              </View>
+              <View style={styles.userMain}>
+                <Text style={styles.userName}>{u.name || "User"}</Text>
+                <View style={styles.emailRow}>
+                  <Text style={styles.userMeta}>{u.email}</Text>
+                  <Pressable onPress={() => Alert.alert("Email", u.email || "-")}>
+                    <Text style={styles.copyLink}>Copy</Text>
+                  </Pressable>
+                </View>
+              </View>
+              <View style={styles.userRight}>
+                <View style={styles.roleBadge}>
+                  <Text style={styles.roleBadgeText}>{String(u?.role || "customer").toUpperCase()}</Text>
+                </View>
+                <Text style={styles.userStatus}>• Active</Text>
+              </View>
+            </View>
+
+            <View style={styles.row}>
+              {ROLE_OPTIONS.map((r) => (
+                <Pressable
+                  key={`${u.id}-${r}`}
+                  style={[styles.secondaryBtn, u.role === r ? styles.secondaryBtnActive : null]}
+                  onPress={() => onChangeRole(u.id, u.email, r)}
+                >
+                  <Text style={u.role === r ? styles.secondaryBtnTextActive : styles.secondaryBtnText}>{r}</Text>
+                </Pressable>
+              ))}
+              <Pressable
+                style={styles.archiveBtn}
+                onPress={() =>
+                  Alert.alert("Archive user", `Archive ${u.email}?`, [
+                    { text: "Cancel", style: "cancel" },
+                    { text: "Archive", style: "destructive", onPress: () => onDelete(u.id, u.email) },
+                  ])
+                }
+              >
+                <Text style={styles.archiveBtnText}>Archive</Text>
+              </Pressable>
+            </View>
+          </View>
+        ))}
+
+      {tab === "archived" &&
+        tabUsers.map((u) => (
+          <View key={u.id} style={[styles.userCard, styles.userCardArchived]}>
+            <View style={styles.userTop}>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>{initials(u?.name, u?.email)}</Text>
+              </View>
+              <View style={styles.userMain}>
+                <Text style={styles.userName}>{u.name || "User"}</Text>
+                <Text style={styles.userMeta}>{u.email}</Text>
+              </View>
+              <View style={styles.userRight}>
+                <View style={styles.roleBadge}>
+                  <Text style={styles.roleBadgeText}>{String(u?.role || "customer").toUpperCase()}</Text>
+                </View>
+                <Text style={styles.userStatusArchived}>• Archived</Text>
+              </View>
+            </View>
+          </View>
+        ))}
+
+      <Modal visible={editorOpen} transparent animationType="fade" onRequestClose={() => setEditorOpen(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setEditorOpen(false)}>
+          <Pressable style={styles.modalCard} onPress={() => {}}>
+            <Text style={styles.cardTitle}>Add user</Text>
+            <TextInput style={styles.input} placeholder="Full name" value={form.name} onChangeText={(v) => setForm((p) => ({ ...p, name: v }))} />
+            <TextInput
+              style={styles.input}
+              placeholder="Email"
+              value={form.email}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              onChangeText={(v) => setForm((p) => ({ ...p, email: v }))}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Temporary password"
+              value={form.password}
+              secureTextEntry
+              onChangeText={(v) => setForm((p) => ({ ...p, password: v }))}
+            />
+            <View style={styles.roleRow}>
+              {ROLE_OPTIONS.map((r) => (
+                <Pressable
+                  key={r}
+                  style={[styles.rolePill, form.role === r ? styles.rolePillActive : null]}
+                  onPress={() => setForm((p) => ({ ...p, role: r }))}
+                >
+                  <Text style={form.role === r ? styles.roleTextActive : styles.roleText}>{r}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Pressable style={styles.primaryBtn} onPress={onCreate}>
+              <Text style={styles.primaryBtnText}>Create user</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </ScrollView>
   );
 }
@@ -156,12 +269,31 @@ export function AdminUsersScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: brand.bg },
   content: { padding: 16, paddingBottom: 28 },
+  topRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
   title: { fontSize: 34, fontWeight: "800", color: brand.dark, fontStyle: "italic" },
-  subtitle: { color: brand.textLight, marginTop: 4, marginBottom: 12 },
+  subtitle: { color: brand.textLight, marginTop: 2, marginBottom: 10 },
+  editBtn: { borderWidth: 1, borderColor: brand.border, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 10, backgroundColor: "#14101a" },
+  editBtnText: { color: brand.white, fontWeight: "700", fontSize: 11 },
 
-  card: { borderWidth: 1, borderColor: brand.border, backgroundColor: brand.white, borderRadius: 14, padding: 12, marginBottom: 14 },
+  searchRow: { flexDirection: "row", gap: 8, marginBottom: 8 },
+  searchInput: { flex: 1, borderWidth: 1, borderColor: brand.border, backgroundColor: brand.white, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 10, fontSize: 12 },
+  addBtn: { borderRadius: 8, paddingVertical: 10, paddingHorizontal: 12, backgroundColor: "#9c6f2d", justifyContent: "center" },
+  addBtnText: { color: brand.white, fontWeight: "800", fontSize: 11 },
+
+  filterRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 8 },
+  filterPill: { borderWidth: 1, borderColor: brand.border, borderRadius: 999, backgroundColor: brand.white, paddingVertical: 5, paddingHorizontal: 10 },
+  filterPillActive: { backgroundColor: brand.dark, borderColor: brand.dark },
+  filterPillText: { color: brand.dark, fontWeight: "700", fontSize: 11 },
+  filterPillTextActive: { color: brand.white, fontWeight: "700", fontSize: 11 },
+
+  tabRow: { flexDirection: "row", gap: 8, marginBottom: 10 },
+  tabBtn: { borderBottomWidth: 2, borderBottomColor: "transparent", paddingBottom: 5 },
+  tabBtnActive: { borderBottomColor: brand.dark },
+  tabText: { color: brand.textLight, fontWeight: "700", fontSize: 12 },
+  tabTextActive: { color: brand.dark, fontWeight: "900", fontSize: 12 },
+
   cardTitle: { color: brand.dark, fontWeight: "900", marginBottom: 10 },
-  input: { borderWidth: 1, borderColor: brand.border, backgroundColor: brand.white, padding: 11, marginBottom: 9 },
+  input: { borderWidth: 1, borderColor: brand.border, backgroundColor: brand.white, borderRadius: 8, padding: 11, marginBottom: 9 },
 
   roleRow: { flexDirection: "row", gap: 8, marginBottom: 10 },
   rolePill: { flex: 1, borderWidth: 1, borderColor: brand.border, borderRadius: 999, paddingVertical: 8, backgroundColor: brand.white },
@@ -172,20 +304,33 @@ const styles = StyleSheet.create({
   primaryBtn: { backgroundColor: brand.buttonAlt, paddingVertical: 12, borderRadius: 10 },
   primaryBtnText: { color: brand.white, textAlign: "center", fontWeight: "900", letterSpacing: 0.8, fontSize: 11 },
 
-  sectionTitle: { color: brand.dark, fontWeight: "900", marginBottom: 8 },
-
   userCard: { borderWidth: 1, borderColor: brand.border, backgroundColor: brand.white, borderRadius: 14, padding: 12, marginBottom: 10 },
+  userCardArchived: { opacity: 0.7 },
+  userTop: { flexDirection: "row", alignItems: "center", gap: 10 },
+  avatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: "#5d5adb", alignItems: "center", justifyContent: "center" },
+  avatarText: { color: brand.white, fontWeight: "900", fontSize: 12 },
+  userMain: { flex: 1, minWidth: 0 },
   userName: { color: brand.dark, fontWeight: "900" },
-  userMeta: { color: brand.textLight, marginTop: 3, fontSize: 12 },
+  emailRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 2 },
+  userMeta: { color: brand.textLight, fontSize: 11 },
+  copyLink: { color: "#6a65d8", fontWeight: "700", fontSize: 10 },
+  userRight: { alignItems: "flex-end", gap: 4 },
+  roleBadge: { borderWidth: 1, borderColor: brand.border, backgroundColor: "#f1f2ff", borderRadius: 999, paddingVertical: 2, paddingHorizontal: 8 },
+  roleBadgeText: { color: "#4f56a6", fontSize: 9, fontWeight: "900" },
+  userStatus: { color: "#4a7f4f", fontSize: 10, fontWeight: "700" },
+  userStatusArchived: { color: "#9a6b13", fontSize: 10, fontWeight: "700" },
 
   row: { flexDirection: "row", gap: 8, marginTop: 10 },
-  secondaryBtn: { flex: 1, borderWidth: 1, borderColor: brand.border, borderRadius: 10, paddingVertical: 9, backgroundColor: brand.white },
+  secondaryBtn: { flex: 1, borderWidth: 1, borderColor: brand.border, borderRadius: 10, paddingVertical: 8, backgroundColor: brand.white },
   secondaryBtnActive: { backgroundColor: brand.accentSoft },
   secondaryBtnText: { textAlign: "center", fontWeight: "900", fontSize: 11, color: brand.dark },
   secondaryBtnTextActive: { textAlign: "center", fontWeight: "900", fontSize: 11, color: brand.dark },
 
-  dangerBtn: { marginTop: 10, paddingVertical: 10, borderRadius: 10, backgroundColor: "#a82949" },
-  dangerBtnText: { color: brand.white, textAlign: "center", fontWeight: "900", fontSize: 11 },
+  archiveBtn: { borderWidth: 1, borderColor: "#d7bcc3", borderRadius: 10, paddingVertical: 8, paddingHorizontal: 10, backgroundColor: "#fff7f8", justifyContent: "center" },
+  archiveBtnText: { color: "#8f475b", textAlign: "center", fontWeight: "800", fontSize: 11 },
+
+  modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.35)", alignItems: "center", justifyContent: "center", padding: 16 },
+  modalCard: { width: "100%", maxWidth: 390, borderWidth: 1, borderColor: brand.border, borderRadius: 12, backgroundColor: brand.white, padding: 12 },
 
   deniedWrap: { flex: 1, justifyContent: "center", alignItems: "center", padding: 16, backgroundColor: brand.bg },
   deniedTitle: { fontSize: 18, fontWeight: "900", color: brand.dark },

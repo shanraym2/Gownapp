@@ -1,62 +1,239 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { GOWNS } from "../data/gowns";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || "https://plankton-app-blym2.ondigitalocean.app";
+const ADMIN_SECRET = process.env.EXPO_PUBLIC_ADMIN_SECRET || "qweqwe123";
+const GOWN_PROMO_OVERRIDES_KEY = "jce_gown_promo_overrides";
 
-const GOWNS_KEY = "jce_mobile_gowns_catalog";
+function makeUrl(path) {
+  return `${String(API_BASE_URL).replace(/\/+$/, "")}${path}`;
+}
 
-export async function fetchGowns() {
+function toPriceText(value) {
+  if (typeof value === "string" && value.trim()) return value;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "P0";
+  return `P${n.toLocaleString("en-PH")}`;
+}
+
+function toInventoryObject(raw) {
+  const obj = {};
+  const list = Array.isArray(raw) ? raw : [];
+  for (const row of list) {
+    const size = String(row?.size || row?.sizeLabel || "").trim();
+    if (!size) continue;
+    const available = row?.available ?? row?.stock ?? row?.stockQty ?? 0;
+    obj[size] = Math.max(0, Number(available) || 0);
+  }
+  return obj;
+}
+
+function normalizeRemoteGown(item, archivedFallback = false) {
+  const sizeInventory = toInventoryObject(item?.inventory || item?.sizeStock || []);
+  const stockQtyFromInventory = Object.values(sizeInventory).reduce((sum, qty) => sum + (Number(qty) || 0), 0);
+  const explicitStock = Number(item?.stockQty);
+  const stockQty = Number.isFinite(explicitStock) ? explicitStock : stockQtyFromInventory;
+  return {
+    id: String(item?.id || ""),
+    name: String(item?.name || "").trim(),
+    price: toPriceText(item?.price ?? item?.salePrice),
+    promoPrice: String(item?.promoPrice || "").trim(),
+    promo: Boolean(item?.promo),
+    image: String(item?.image || "").trim(),
+    alt: String(item?.alt || item?.name || "").trim(),
+    type: String(item?.type || "Gowns").trim(),
+    color: String(item?.color || "").trim(),
+    silhouette: String(item?.silhouette || "").trim(),
+    description: String(item?.description || "").trim(),
+    neckline: String(item?.neckline || "").trim(),
+    fabric: String(item?.fabric || "").trim(),
+    additionalImages: Array.isArray(item?.additionalImages)
+      ? item.additionalImages.map((x) => String(x || "").trim()).filter(Boolean)
+      : [],
+    sizeInventory,
+    stockQty: Math.max(0, stockQty),
+    lowStockThreshold: Math.max(0, Number(item?.lowStockThreshold) || 0),
+    archived: item?.archived !== undefined ? Boolean(item.archived) : archivedFallback || item?.isActive === false,
+  };
+}
+
+async function loadPromoOverrides() {
   try {
-    const raw = await AsyncStorage.getItem(GOWNS_KEY);
-    const stored = raw ? JSON.parse(raw) : null;
-    if (Array.isArray(stored) && stored.length) return stored;
-    return GOWNS;
+    const raw = await AsyncStorage.getItem(GOWN_PROMO_OVERRIDES_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
-    return GOWNS;
+    return {};
   }
 }
 
-async function saveGownsCatalog(items) {
-  await AsyncStorage.setItem(GOWNS_KEY, JSON.stringify(items || []));
+async function savePromoOverrides(next) {
+  try {
+    await AsyncStorage.setItem(GOWN_PROMO_OVERRIDES_KEY, JSON.stringify(next || {}));
+  } catch {
+    // ignore storage write issues
+  }
+}
+
+function applyPromoOverride(item, promoOverrides) {
+  const id = String(item?.id || "").trim();
+  if (!id) return item;
+  const override = promoOverrides?.[id];
+  if (!override || typeof override !== "object") return item;
+  const promoPrice = String(override?.promoPrice || "").trim();
+  const promo = Boolean(override?.promo) && Boolean(promoPrice);
+  return { ...item, promo, promoPrice: promo ? promoPrice : "" };
+}
+
+function buildInventoryList(sizeInventory) {
+  if (!sizeInventory || typeof sizeInventory !== "object") return [];
+  return Object.entries(sizeInventory)
+    .map(([size, qty]) => ({
+      size: String(size || "").trim().toUpperCase(),
+      stock: Math.max(0, Number(qty) || 0),
+    }))
+    .filter((x) => x.size);
+}
+
+async function requestJson(path, options = {}) {
+  const response = await fetch(makeUrl(path), options);
+  let body = null;
+  try {
+    body = await response.json();
+  } catch {
+    body = null;
+  }
+  if (!response.ok) {
+    const message = body?.error || `Request failed (${response.status}).`;
+    throw new Error(message);
+  }
+  return body;
+}
+
+export async function fetchGowns() {
+  try {
+    const data = await requestJson("/api/gowns");
+    const items = Array.isArray(data?.gowns) ? data.gowns : [];
+    const promoOverrides = await loadPromoOverrides();
+    return items
+      .map((x) => normalizeRemoteGown(x, false))
+      .map((x) => applyPromoOverride(x, promoOverrides))
+      .filter((x) => !x.archived);
+  } catch {
+    const promoOverrides = await loadPromoOverrides();
+    return GOWNS.map((x) => ({ ...x, archived: false })).map((x) => applyPromoOverride(x, promoOverrides));
+  }
 }
 
 export async function setGownsCatalogAdmin(items) {
-  await saveGownsCatalog(items);
-  return { ok: true };
+  return { ok: false, error: "Catalog sync is server-managed when API mode is enabled.", items };
 }
 
 export async function getAllGownsAdmin() {
-  return fetchGowns();
+  try {
+    const [active, archived] = await Promise.all([
+      requestJson("/api/admin/gowns?tab=active", { headers: { "x-admin-secret": ADMIN_SECRET } }),
+      requestJson("/api/admin/gowns?tab=archived", { headers: { "x-admin-secret": ADMIN_SECRET } }),
+    ]);
+    const promoOverrides = await loadPromoOverrides();
+    const activeItems = (Array.isArray(active?.gowns) ? active.gowns : []).map((x) => normalizeRemoteGown(x, false));
+    const archivedItems = (Array.isArray(archived?.gowns) ? archived.gowns : []).map((x) => normalizeRemoteGown(x, true));
+    return [...activeItems, ...archivedItems].map((x) => applyPromoOverride(x, promoOverrides));
+  } catch {
+    const promoOverrides = await loadPromoOverrides();
+    return GOWNS.map((x) => ({ ...x, archived: false })).map((x) => applyPromoOverride(x, promoOverrides));
+  }
 }
 
 export async function upsertGownAdmin(payload) {
-  const items = await fetchGowns();
-  const id = Number(payload?.id) || Date.now();
-  const nextItem = {
-    id,
-    name: String(payload?.name || "").trim(),
-    price: String(payload?.price || "").trim() || "P0",
-    promoPrice: String(payload?.promoPrice || "").trim(),
-    image: String(payload?.image || "").trim(),
-    alt: String(payload?.alt || "").trim(),
-    type: String(payload?.type || "").trim() || "Gowns",
-    color: String(payload?.color || "").trim() || "Ivory",
-    silhouette: String(payload?.silhouette || "").trim() || "A-line",
-    description: String(payload?.description || "").trim() || "No description provided.",
-    promo: Boolean(payload?.promo),
-    stockQty: Math.max(0, Number.parseInt(String(payload?.stockQty ?? ""), 10) || 0),
-    lowStockThreshold: Math.max(0, Number.parseInt(String(payload?.lowStockThreshold ?? ""), 10) || 0),
-  };
-  const index = items.findIndex((x) => Number(x.id) === id);
-  const next = [...items];
-  if (index >= 0) next[index] = { ...next[index], ...nextItem };
-  else next.unshift(nextItem);
-  await saveGownsCatalog(next);
-  return { ok: true, item: nextItem };
+  try {
+    const id = String(payload?.id || "").trim();
+    const body = {
+      id: id || undefined,
+      name: String(payload?.name || "").trim(),
+      price: String(payload?.price || "").trim() || "P0",
+      image: String(payload?.image || "").trim(),
+      alt: String(payload?.alt || "").trim(),
+      type: String(payload?.type || "Gowns").trim(),
+      color: String(payload?.color || "").trim(),
+      silhouette: String(payload?.silhouette || "").trim(),
+      description: String(payload?.description || "").trim(),
+      neckline: String(payload?.neckline || "").trim(),
+      fabric: String(payload?.fabric || "").trim(),
+      promo: Boolean(payload?.promo),
+      promoPrice: String(payload?.promoPrice || "").trim(),
+      inventory: buildInventoryList(payload?.sizeInventory),
+    };
+    const method = id ? "PUT" : "POST";
+    const data = await requestJson("/api/admin/gowns", {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        "x-admin-secret": ADMIN_SECRET,
+      },
+      body: JSON.stringify(body),
+    });
+    const savedItem = normalizeRemoteGown(data?.gown || {}, false);
+    const resolvedId = String(savedItem?.id || payload?.id || "").trim();
+    if (resolvedId) {
+      const promoOverrides = await loadPromoOverrides();
+      const nextPromoPrice = String(payload?.promoPrice || "").trim();
+      const nextPromo = Boolean(payload?.promo) && Boolean(nextPromoPrice);
+      const nextOverrides = { ...promoOverrides };
+      if (nextPromo) {
+        nextOverrides[resolvedId] = { promo: true, promoPrice: nextPromoPrice };
+      } else {
+        delete nextOverrides[resolvedId];
+      }
+      await savePromoOverrides(nextOverrides);
+      return { ok: true, item: applyPromoOverride(savedItem, nextOverrides) };
+    }
+    return { ok: true, item: savedItem };
+  } catch (e) {
+    return { ok: false, error: e?.message || "Failed to save gown." };
+  }
 }
 
 export async function deleteGownAdmin(id) {
-  const numericId = Number(id);
-  const items = await fetchGowns();
-  const next = items.filter((x) => Number(x.id) !== numericId);
-  await saveGownsCatalog(next);
-  return { ok: true };
+  try {
+    const gownId = String(id || "").trim();
+    await requestJson(`/api/admin/gowns?id=${encodeURIComponent(gownId)}&permanent=1`, {
+      method: "DELETE",
+      headers: { "x-admin-secret": ADMIN_SECRET },
+    });
+    if (gownId) {
+      const promoOverrides = await loadPromoOverrides();
+      if (promoOverrides[gownId]) {
+        const next = { ...promoOverrides };
+        delete next[gownId];
+        await savePromoOverrides(next);
+      }
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e?.message || "Failed to delete gown." };
+  }
+}
+
+export async function setGownArchivedAdmin(id, archived = true) {
+  try {
+    const gownId = String(id || "").trim();
+    if (archived) {
+      await requestJson(`/api/admin/gowns?id=${encodeURIComponent(gownId)}`, {
+        method: "DELETE",
+        headers: { "x-admin-secret": ADMIN_SECRET },
+      });
+      return { ok: true };
+    }
+    const data = await requestJson("/api/admin/gowns", {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "x-admin-secret": ADMIN_SECRET,
+      },
+      body: JSON.stringify({ id: gownId, restore: true }),
+    });
+    return { ok: true, item: normalizeRemoteGown(data?.gown || {}, false) };
+  } catch (e) {
+    return { ok: false, error: e?.message || "Failed to update archive status." };
+  }
 }

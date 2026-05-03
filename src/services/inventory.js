@@ -1,4 +1,5 @@
 import { fetchGowns, setGownsCatalogAdmin } from "./gowns";
+import { idsEqual, normalizeId } from "../utils/id";
 
 function toNonNegativeInt(value, fallback = 0) {
   const n = Number.parseInt(String(value ?? ""), 10);
@@ -20,19 +21,19 @@ export async function ensureInventoryFields() {
 }
 
 export async function getStockForGownId(id) {
-  const numericId = Number(id);
+  const targetId = normalizeId(id);
   const items = await fetchGowns();
-  const item = (Array.isArray(items) ? items : []).find((g) => Number(g?.id) === numericId);
+  const item = (Array.isArray(items) ? items : []).find((g) => idsEqual(g?.id, targetId));
   const normalized = item ? normalizeCatalogItem(item) : null;
   return { ok: Boolean(normalized), stockQty: normalized?.stockQty ?? 0, item: normalized };
 }
 
 export async function adjustStockAdmin(gownId, delta) {
-  const numericId = Number(gownId);
+  const targetId = normalizeId(gownId);
   const deltaInt = Number.parseInt(String(delta ?? "0"), 10) || 0;
   const items = await fetchGowns();
   const next = (Array.isArray(items) ? items : []).map(normalizeCatalogItem);
-  const index = next.findIndex((g) => Number(g?.id) === numericId);
+  const index = next.findIndex((g) => idsEqual(g?.id, targetId));
   if (index < 0) return { ok: false, error: "Gown not found." };
   const current = next[index];
   const updated = { ...current, stockQty: Math.max(0, Number(current.stockQty || 0) + deltaInt) };
@@ -42,11 +43,11 @@ export async function adjustStockAdmin(gownId, delta) {
 }
 
 export async function setStockAdmin(gownId, stockQty) {
-  const numericId = Number(gownId);
+  const targetId = normalizeId(gownId);
   const qty = toNonNegativeInt(stockQty, 0);
   const items = await fetchGowns();
   const next = (Array.isArray(items) ? items : []).map(normalizeCatalogItem);
-  const index = next.findIndex((g) => Number(g?.id) === numericId);
+  const index = next.findIndex((g) => idsEqual(g?.id, targetId));
   if (index < 0) return { ok: false, error: "Gown not found." };
   const updated = { ...next[index], stockQty: qty };
   next[index] = updated;
@@ -59,12 +60,12 @@ export async function validateAndReserveInventoryForOrder(orderItems) {
   const catalog = (Array.isArray(items) ? items : []).map(normalizeCatalogItem);
 
   const needs = (Array.isArray(orderItems) ? orderItems : [])
-    .map((i) => ({ id: Number(i?.id), qty: toNonNegativeInt(i?.qty, 0) }))
-    .filter((i) => Number.isFinite(i.id) && i.qty > 0);
+    .map((i) => ({ id: normalizeId(i?.id), qty: toNonNegativeInt(i?.qty, 0) }))
+    .filter((i) => Boolean(i.id) && i.qty > 0);
 
   const errors = [];
   for (const need of needs) {
-    const g = catalog.find((x) => Number(x?.id) === need.id);
+    const g = catalog.find((x) => idsEqual(x?.id, need.id));
     if (!g) {
       errors.push(`Item #${need.id} is no longer available.`);
       continue;
@@ -80,7 +81,7 @@ export async function validateAndReserveInventoryForOrder(orderItems) {
 
   // Deduct stock
   const nextCatalog = catalog.map((g) => {
-    const need = needs.find((n) => n.id === Number(g?.id));
+    const need = needs.find((n) => idsEqual(n.id, g?.id));
     if (!need) return g;
     return { ...g, stockQty: Math.max(0, Number(g.stockQty || 0) - need.qty) };
   });

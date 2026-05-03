@@ -1,35 +1,185 @@
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useMemo, useState } from "react";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import { useShop } from "../context/ShopContext";
 import { canAccess } from "../utils/access";
+import { getAllOrdersAdmin } from "../services/orders";
+import { getAllGownsAdmin } from "../services/gowns";
+import { deleteUserAdmin, listUsersAdmin } from "../services/authLocal";
 import { brand } from "../theme/brand";
 
 export function AdminPanelScreen({ navigation }) {
-  const { user } = useShop();
+  const { user, logout } = useShop();
+  const [loading, setLoading] = useState(true);
+  const [orders, setOrders] = useState([]);
+  const [gowns, setGowns] = useState([]);
+  const [users, setUsers] = useState([]);
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    const [ordersData, gownsData, usersData] = await Promise.all([
+      getAllOrdersAdmin(),
+      getAllGownsAdmin(),
+      listUsersAdmin(),
+    ]);
+    setOrders(Array.isArray(ordersData) ? ordersData : []);
+    setGowns(Array.isArray(gownsData) ? gownsData : []);
+    setUsers(Array.isArray(usersData) ? usersData : []);
+    setLoading(false);
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData])
+  );
+
+  const snapshot = useMemo(() => {
+    const metrics = {
+      totalRevenue: 0,
+      totalOrders: 0,
+      inProgress: 0,
+      completed: 0,
+      awaitingPayment: 0,
+      productsListed: gowns.filter((g) => !Boolean(g?.archived)).length,
+      staffCount: users.filter((u) => String(u?.role || "") !== "customer").length,
+    };
+    for (const o of orders) {
+      const status = String(o?.status || "").toLowerCase();
+      const total = Number(o?.total || o?.subtotal || 0);
+      metrics.totalOrders += 1;
+      // Match web dashboard snapshot logic:
+      // - Revenue excludes cancelled/refunded
+      // - Awaiting payment includes placed + pending_payment
+      if (!["cancelled", "refunded"].includes(status)) {
+        metrics.totalRevenue += Number.isFinite(total) ? total : 0;
+      }
+      if (status === "placed" || status === "pending_payment") metrics.awaitingPayment += 1;
+      if (status === "completed") metrics.completed += 1;
+      if (status === "processing" || status === "shipped" || status === "paid") metrics.inProgress += 1;
+    }
+    return metrics;
+  }, [gowns, orders, users]);
+
+  const adminCards = [
+    {
+      key: "catalogue",
+      title: "Catalogue",
+      desc: "Add, edit, or remove listings.",
+      route: "AdminGowns",
+      allowed: canAccess(user, "admin_gowns"),
+    },
+    {
+      key: "orders",
+      title: "Orders",
+      desc: "View and manage all orders.",
+      route: "AdminOrders",
+      allowed: canAccess(user, "admin_orders"),
+    },
+    {
+      key: "sales",
+      title: "Sales dashboard",
+      desc: "Review charts and analytics.",
+      route: "AdminStats",
+      allowed: canAccess(user, "admin_stats"),
+    },
+    {
+      key: "users",
+      title: "Users",
+      desc: "View registered accounts.",
+      route: "AdminUsers",
+      allowed: canAccess(user, "admin_users"),
+    },
+    {
+      key: "content",
+      title: "Content",
+      desc: "Edit homepage slides, copy, and theme.",
+      route: null,
+      allowed: true,
+    },
+  ];
+
+  const onResetUsers = () => {
+    Alert.alert("Reset all users", "Delete all user accounts and log everyone out?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Reset users",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            const allUsers = await listUsersAdmin();
+            for (const u of allUsers) {
+              await deleteUserAdmin({ email: u?.email });
+            }
+            await logout();
+            Alert.alert("Done", "All user accounts were removed.");
+          } catch (e) {
+            Alert.alert("Reset failed", e.message || "Could not reset users.");
+          }
+        },
+      },
+    ]);
+  };
+
+  const kpis = [
+    { label: "Total revenue", value: `P${Number(snapshot.totalRevenue).toLocaleString("en-PH")}` },
+    { label: "Total orders", value: String(snapshot.totalOrders) },
+    { label: "In progress", value: String(snapshot.inProgress) },
+    { label: "Completed", value: String(snapshot.completed) },
+    { label: "Awaiting payment", value: String(snapshot.awaitingPayment) },
+    { label: "Products listed", value: String(snapshot.productsListed) },
+  ];
+
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Admin Panel</Text>
-      {canAccess(user, "admin_orders") ? (
-        <Pressable style={styles.outline} onPress={() => navigation.navigate("AdminOrders")}>
-          <Text style={styles.outlineText}>Manage Orders</Text>
-        </Pressable>
-      ) : null}
-      {canAccess(user, "admin_gowns") ? (
-        <Pressable style={styles.outline} onPress={() => navigation.navigate("AdminGowns")}>
-          <Text style={styles.outlineText}>Manage Gowns</Text>
-        </Pressable>
-      ) : null}
-      {canAccess(user, "admin_stats") ? (
-        <Pressable style={styles.outline} onPress={() => navigation.navigate("AdminStats")}>
-          <Text style={styles.outlineText}>Statistics</Text>
-        </Pressable>
-      ) : null}
-      {canAccess(user, "admin_users") ? (
-        <Pressable style={styles.outline} onPress={() => navigation.navigate("AdminUsers")}>
-          <Text style={styles.outlineText}>User Accounts</Text>
-        </Pressable>
-      ) : null}
+      <Text style={styles.title}>Dashboard</Text>
+      <Text style={styles.subtitle}>Signed in as {user?.email || "-"}</Text>
 
-      {!canAccess(user, "admin_orders") && !canAccess(user, "admin_gowns") && !canAccess(user, "admin_stats") && !canAccess(user, "admin_users") ? (
+      <View style={styles.snapshotCard}>
+        <Text style={styles.snapshotLabel}>SNAPSHOT</Text>
+        <View style={styles.kpiRow}>
+          {kpis.map((k) => (
+            <View key={k.label} style={styles.kpiItem}>
+              <Text style={styles.kpiValue}>{loading ? "..." : k.value}</Text>
+              <Text style={styles.kpiText}>{k.label}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+
+      <View style={styles.quickGrid}>
+        {adminCards
+          .filter((card) => card.allowed)
+          .map((card) => (
+            <Pressable
+              key={card.key}
+              style={styles.quickCard}
+              onPress={() => {
+                if (!card.route) {
+                  Alert.alert("Coming soon", "Content editor is not added yet.");
+                  return;
+                }
+                navigation.navigate(card.route);
+              }}
+            >
+              <Text style={styles.quickTitle}>{card.title}</Text>
+              <Text style={styles.quickText}>{card.desc}</Text>
+            </Pressable>
+          ))}
+      </View>
+
+      <Text style={styles.dangerLabel}>DANGER ZONE</Text>
+      <View style={styles.dangerCard}>
+        <View style={styles.dangerLeft}>
+          <Text style={styles.dangerTitle}>Reset all users</Text>
+          <Text style={styles.dangerText}>Deletes all device-stored accounts and logs everyone out.</Text>
+        </View>
+        <Pressable style={styles.resetBtn} onPress={onResetUsers}>
+          <Text style={styles.resetBtnText}>Reset users</Text>
+        </Pressable>
+      </View>
+
+      {!adminCards.some((x) => x.allowed) ? (
         <View style={styles.emptyWrap}>
           <Text style={styles.emptyText}>No admin tools available for your role.</Text>
         </View>
@@ -40,10 +190,39 @@ export function AdminPanelScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: brand.bg },
-  content: { padding: 16, paddingBottom: 40 },
-  title: { fontSize: 30, fontWeight: "700", marginBottom: 12, color: brand.dark, fontStyle: "italic" },
-  outline: { borderWidth: 1, borderColor: brand.border, paddingVertical: 12, marginBottom: 8, backgroundColor: brand.white },
-  outlineText: { color: brand.text, textAlign: "center", fontWeight: "700", letterSpacing: 0.8, fontSize: 11 },
+  content: { padding: 16, paddingBottom: 30 },
+  title: { fontSize: 36, fontWeight: "700", color: "#202020", fontStyle: "italic" },
+  subtitle: { color: "#8a8a8a", fontSize: 12, marginTop: 4, marginBottom: 12 },
+
+  snapshotCard: { borderWidth: 1, borderColor: "#e2e2e2", borderRadius: 10, backgroundColor: brand.white, padding: 12 },
+  snapshotLabel: { color: "#9b9b9b", fontSize: 10, letterSpacing: 1.1, marginBottom: 8 },
+  kpiRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  kpiItem: { minWidth: 82 },
+  kpiValue: { color: "#1f1f1f", fontWeight: "800", fontSize: 24 },
+  kpiText: { color: "#7f7f7f", fontSize: 11, marginTop: 2 },
+
+  quickGrid: { marginTop: 12, flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  quickCard: { width: 125, minHeight: 92, borderWidth: 1, borderColor: "#e2e2e2", borderRadius: 10, backgroundColor: brand.white, padding: 10 },
+  quickTitle: { color: "#202020", fontWeight: "700", fontSize: 13, marginBottom: 4 },
+  quickText: { color: "#848484", fontSize: 11, lineHeight: 15 },
+  dangerLabel: { color: "#9b7b4a", fontSize: 10, letterSpacing: 1, marginTop: 20, marginBottom: 8, fontWeight: "700" },
+  dangerCard: {
+    borderWidth: 1,
+    borderColor: "#e2e2e2",
+    borderRadius: 10,
+    backgroundColor: brand.white,
+    padding: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  dangerLeft: { flex: 1 },
+  dangerTitle: { color: "#202020", fontSize: 13, fontWeight: "700", marginBottom: 2 },
+  dangerText: { color: "#8b8b8b", fontSize: 11 },
+  resetBtn: { backgroundColor: "#ffecef", borderRadius: 6, paddingVertical: 8, paddingHorizontal: 12 },
+  resetBtnText: { color: "#a33d54", fontWeight: "700", fontSize: 11 },
+
   emptyWrap: { marginTop: 12, padding: 12, borderWidth: 1, borderColor: brand.border, backgroundColor: brand.white },
   emptyText: { color: brand.textLight, textAlign: "center", fontWeight: "800", fontSize: 12 },
 });
