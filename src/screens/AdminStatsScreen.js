@@ -12,7 +12,7 @@ import { brand } from "../theme/brand";
 import { normalizeId } from "../utils/id";
 
 function money(n) {
-  return `P${Number(n || 0).toLocaleString("en-PH")}`;
+  return `P${Math.round(Number(n || 0)).toLocaleString("en-PH")}`;
 }
 
 function shortMoney(n) {
@@ -97,7 +97,7 @@ export function AdminStatsScreen() {
   const [orders, setOrders] = useState([]);
   const [gowns, setGowns] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [range, setRange] = useState("day"); // day | week | month | year
+  const [range, setRange] = useState("daily"); // daily | month | year
   const [reportType, setReportType] = useState("overview");
   const [dateRangeKey, setDateRangeKey] = useState("alltime");
 
@@ -168,7 +168,7 @@ export function AdminStatsScreen() {
     }, {});
 
     const byItem = new Map();
-    for (const o of completedOrders) {
+    for (const o of allOrders) {
       const items = Array.isArray(o?.items) ? o.items : [];
       for (const it of items) {
         const id = normalizeId(it?.id);
@@ -196,7 +196,7 @@ export function AdminStatsScreen() {
         .filter(Boolean)
     );
 
-    // Chart data: week = last 7 days revenue; today = revenue by hour (6 buckets)
+    // Chart data: daily = last 7 days; monthly = last 30 days; yearly = last 12 months
     const nowDate = new Date(now);
     const weekBuckets = Array.from({ length: 7 }).map((_, idx) => {
       const d = new Date(nowDate);
@@ -208,6 +208,30 @@ export function AdminStatsScreen() {
     for (const { o, d } of ordersWithDate) {
       if (!isCompletedOrder(o)) continue;
       const bucket = weekBuckets.find((b) => sameDay(b.day, d));
+      if (bucket) bucket.value += getOrderTotal(o);
+    }
+
+    const monthlyBuckets = Array.from({ length: 30 }).map((_, idx) => {
+      const d = new Date(nowDate);
+      d.setDate(d.getDate() - (29 - idx));
+      const day = startOfDay(d);
+      const label = day.toLocaleDateString("en-PH", { month: "short", day: "numeric" });
+      return { label, value: 0, day };
+    });
+    for (const { o, d } of ordersWithDate) {
+      if (!isCompletedOrder(o)) continue;
+      const bucket = monthlyBuckets.find((b) => sameDay(b.day, d));
+      if (bucket) bucket.value += getOrderTotal(o);
+    }
+
+    const yearlyBuckets = Array.from({ length: 12 }).map((_, idx) => {
+      const d = new Date(nowDate.getFullYear(), nowDate.getMonth() - (11 - idx), 1);
+      const label = d.toLocaleDateString("en-PH", { month: "short" });
+      return { label, value: 0, month: d.getMonth(), year: d.getFullYear() };
+    });
+    for (const { o, d } of ordersWithDate) {
+      if (!isCompletedOrder(o)) continue;
+      const bucket = yearlyBuckets.find((b) => b.month === d.getMonth() && b.year === d.getFullYear());
       if (bucket) bucket.value += getOrderTotal(o);
     }
 
@@ -248,12 +272,14 @@ export function AdminStatsScreen() {
       outOfStockCount: outOfStock.length,
       lowStockCount: lowStock.length,
       customersCount: uniqueCustomers.size,
-      weekSeries: weekBuckets.map((b) => ({ label: b.label, value: b.value })),
+      dailySeries: weekBuckets.map((b) => ({ label: b.label, value: b.value })),
+      monthlySeries: monthlyBuckets.map((b) => ({ label: b.label, value: b.value })),
+      yearlySeries: yearlyBuckets.map((b) => ({ label: b.label, value: b.value })),
       todaySeries: hourBuckets.map((b) => ({ label: b.label, value: b.value })),
     };
   }, [orders, gowns]);
 
-  const series = range === "day" ? stats.todaySeries : stats.weekSeries;
+  const series = range === "daily" ? stats.dailySeries : range === "month" ? stats.monthlySeries : stats.yearlySeries;
   const maxValue = Math.max(...series.map((s) => Number(s.value) || 0), 1);
   const statusLegend = [
     "placed",
@@ -479,16 +505,10 @@ th{background:#11152e;color:#f0d49f}
           <Text style={styles.cardTitle}>Revenue over time</Text>
           <View style={styles.segment}>
             <Pressable
-              style={[styles.segmentBtn, range === "day" ? styles.segmentBtnActive : null]}
-              onPress={() => setRange("day")}
+              style={[styles.segmentBtn, range === "daily" ? styles.segmentBtnActive : null]}
+              onPress={() => setRange("daily")}
             >
-              <Text style={[styles.segmentText, range === "day" ? styles.segmentTextActive : null]}>Day</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.segmentBtn, range === "week" ? styles.segmentBtnActive : null]}
-              onPress={() => setRange("week")}
-            >
-              <Text style={[styles.segmentText, range === "week" ? styles.segmentTextActive : null]}>Weekly</Text>
+              <Text style={[styles.segmentText, range === "daily" ? styles.segmentTextActive : null]}>Daily</Text>
             </Pressable>
             <Pressable
               style={[styles.segmentBtn, range === "month" ? styles.segmentBtnActive : null]}
@@ -527,7 +547,7 @@ th{background:#11152e;color:#f0d49f}
           <Text style={styles.cardTitle}>Top items sold</Text>
           {stats.topByQty.length ? (
             <>
-              {stats.topByQty.slice(0, 4).map((x, idx) => (
+              {stats.topByQty.slice(0, 3).map((x, idx) => (
                 <View key={x.id} style={styles.topRow}>
                   <Text style={styles.topRank}>#{idx + 1}</Text>
                   <Text style={styles.topName} numberOfLines={1}>{x.name}</Text>

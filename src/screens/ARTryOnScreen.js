@@ -30,12 +30,13 @@ const DEFAULT_FIT_MODEL = {
   torsoHeight: 0.28,
 };
 
-export function ARTryOnScreen() {
+export function ARTryOnScreen({ route }) {
   const { gowns } = useShop();
   const isFocused = useIsFocused();
   const [permission, requestPermission] = useCameraPermissions();
   const [cameraFacing, setCameraFacing] = useState("front");
-  const [selectedId, setSelectedId] = useState(null);
+  const initialId = route?.params?.id || null;
+  const [selectedId, setSelectedId] = useState(initialId);
   const [overlayScale, setOverlayScale] = useState(1);
   const [overlayOpacity, setOverlayOpacity] = useState(0.72);
   const [autoFitEnabled, setAutoFitEnabled] = useState(true);

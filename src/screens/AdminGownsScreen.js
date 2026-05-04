@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";
 import { deleteGownAdmin, getAllGownsAdmin, setGownArchivedAdmin, upsertGownAdmin } from "../services/gowns";
 import { useShop } from "../context/ShopContext";
@@ -31,6 +31,7 @@ const SIZE_PRESETS = ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "6", "8", 
 
 export function AdminGownsScreen() {
   const { user } = useShop();
+  const navigation = useNavigation();
   const allowed = canAccess(user, "admin_gowns");
   const [items, setItems] = useState([]);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -516,7 +517,14 @@ export function AdminGownsScreen() {
             <Text style={styles.viewDescription}>{viewTarget?.description || "No description provided."}</Text>
 
             <View style={styles.viewActions}>
-              <Pressable style={styles.viewQuickBtn}>
+              <Pressable
+                style={styles.viewQuickBtn}
+                onPress={() => {
+                  setViewOpen(false);
+                  if (!viewTarget) return;
+                  navigation.navigate("GownDetail", { id: viewTarget.id });
+                }}
+              >
                 <Text style={styles.viewQuickBtnText}>Open product page</Text>
               </Pressable>
               <Pressable
@@ -524,10 +532,7 @@ export function AdminGownsScreen() {
                 onPress={() => {
                   setViewOpen(false);
                   if (!viewTarget) return;
-                  setStockTarget(viewTarget);
-                  setStockDraft(viewTarget?.sizeInventory && typeof viewTarget.sizeInventory === "object" ? viewTarget.sizeInventory : {});
-                  setStockCustomSize("");
-                  setStockEditorOpen(true);
+                  navigation.navigate("AR Try-On", { id: viewTarget.id });
                 }}
               >
                 <Text style={styles.viewQuickBtnText}>Virtual try-on</Text>
