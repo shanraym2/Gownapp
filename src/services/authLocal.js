@@ -1,10 +1,9 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { isRealName, passwordMeetsRules } from "../utils/authValidation";
 import { normalizeRole } from "../utils/access";
+import { API_BASE_URL, adminAuthHeaders, getAdminSecret } from "../config/apiEnv";
 
 const USERS_KEY = "jce_users";
-const API_BASE_URL = String(process.env.EXPO_PUBLIC_API_BASE_URL || "").trim().replace(/\/+$/, "");
-const ADMIN_SECRET = String(process.env.EXPO_PUBLIC_ADMIN_SECRET || "").trim();
 
 function normalizeEmail(email) {
   return String(email || "").trim().toLowerCase();
@@ -54,7 +53,7 @@ async function requestJson(path, options = {}) {
       method: options.method || "GET",
       headers: {
         "Content-Type": "application/json",
-        ...(options.includeAdminSecret !== false && ADMIN_SECRET ? { "x-admin-secret": ADMIN_SECRET } : {}),
+        ...(options.includeAdminSecret !== false && getAdminSecret() ? adminAuthHeaders() : {}),
         ...(options.headers || {}),
       },
       ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),

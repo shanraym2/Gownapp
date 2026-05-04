@@ -1,7 +1,6 @@
 import { GOWNS } from "../data/gowns";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || "https://plankton-app-blym2.ondigitalocean.app";
-const ADMIN_SECRET = process.env.EXPO_PUBLIC_ADMIN_SECRET || "qweqwe123";
+import { API_BASE_URL, adminAuthHeaders } from "../config/apiEnv";
 const GOWN_PROMO_OVERRIDES_KEY = "jce_gown_promo_overrides";
 
 function makeUrl(path) {
@@ -131,8 +130,8 @@ export async function setGownsCatalogAdmin(items) {
 export async function getAllGownsAdmin() {
   try {
     const [active, archived] = await Promise.all([
-      requestJson("/api/admin/gowns?tab=active", { headers: { "x-admin-secret": ADMIN_SECRET } }),
-      requestJson("/api/admin/gowns?tab=archived", { headers: { "x-admin-secret": ADMIN_SECRET } }),
+      requestJson("/api/admin/gowns?tab=active", { headers: adminAuthHeaders() }),
+      requestJson("/api/admin/gowns?tab=archived", { headers: adminAuthHeaders() }),
     ]);
     const promoOverrides = await loadPromoOverrides();
     const activeItems = (Array.isArray(active?.gowns) ? active.gowns : []).map((x) => normalizeRemoteGown(x, false));
@@ -166,10 +165,7 @@ export async function upsertGownAdmin(payload) {
     const method = id ? "PUT" : "POST";
     const data = await requestJson("/api/admin/gowns", {
       method,
-      headers: {
-        "Content-Type": "application/json",
-        "x-admin-secret": ADMIN_SECRET,
-      },
+      headers: adminAuthHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(body),
     });
     const savedItem = normalizeRemoteGown(data?.gown || {}, false);
@@ -198,7 +194,7 @@ export async function deleteGownAdmin(id) {
     const gownId = String(id || "").trim();
     await requestJson(`/api/admin/gowns?id=${encodeURIComponent(gownId)}&permanent=1`, {
       method: "DELETE",
-      headers: { "x-admin-secret": ADMIN_SECRET },
+      headers: adminAuthHeaders(),
     });
     if (gownId) {
       const promoOverrides = await loadPromoOverrides();
@@ -220,16 +216,13 @@ export async function setGownArchivedAdmin(id, archived = true) {
     if (archived) {
       await requestJson(`/api/admin/gowns?id=${encodeURIComponent(gownId)}`, {
         method: "DELETE",
-        headers: { "x-admin-secret": ADMIN_SECRET },
+        headers: adminAuthHeaders(),
       });
       return { ok: true };
     }
     const data = await requestJson("/api/admin/gowns", {
       method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        "x-admin-secret": ADMIN_SECRET,
-      },
+      headers: adminAuthHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ id: gownId, restore: true }),
     });
     return { ok: true, item: normalizeRemoteGown(data?.gown || {}, false) };

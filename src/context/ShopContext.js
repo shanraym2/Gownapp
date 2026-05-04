@@ -89,6 +89,15 @@ export function ShopProvider({ children }) {
     }
     setCart(next);
     await saveCart(next);
+    // Sync to backend immediately after cart changes
+    if (user?.email) {
+      await syncUserData({
+        user,
+        cart: next,
+        favoritesIds,
+        syncedAt: new Date().toISOString(),
+      }).catch(() => {});
+    }
     return { ok: true };
   };
 
@@ -102,6 +111,15 @@ export function ShopProvider({ children }) {
     const next = cart.map((i) => (idsEqual(i.id, normalizedId) ? { ...i, qty: cappedQty } : i));
     setCart(next);
     await saveCart(next);
+    // Sync to backend after quantity changes
+    if (user?.email) {
+      await syncUserData({
+        user,
+        cart: next,
+        favoritesIds,
+        syncedAt: new Date().toISOString(),
+      }).catch(() => {});
+    }
     return { ok: true, qty: cappedQty };
   };
 
@@ -110,16 +128,43 @@ export function ShopProvider({ children }) {
     const next = cart.filter((i) => !idsEqual(i.id, normalizedId));
     setCart(next);
     await saveCart(next);
+    // Sync to backend after item removal
+    if (user?.email) {
+      await syncUserData({
+        user,
+        cart: next,
+        favoritesIds,
+        syncedAt: new Date().toISOString(),
+      }).catch(() => {});
+    }
   };
 
   const clearCart = async () => {
     setCart([]);
     await saveCart([]);
+    // Sync to backend after cart clear
+    if (user?.email) {
+      await syncUserData({
+        user,
+        cart: [],
+        favoritesIds,
+        syncedAt: new Date().toISOString(),
+      }).catch(() => {});
+    }
   };
 
   const login = async (nextUser) => {
     setUser(nextUser);
     await saveUser(nextUser);
+    // Sync to backend after login
+    if (nextUser?.email) {
+      await syncUserData({
+        user: nextUser,
+        cart,
+        favoritesIds,
+        syncedAt: new Date().toISOString(),
+      }).catch(() => {});
+    }
   };
 
   const logout = async () => {
@@ -172,6 +217,15 @@ export function ShopProvider({ children }) {
       : [...favoritesIds.map(normalizeId), normalizedId];
     setFavoritesIds(next);
     await saveFavorites(next);
+    // Sync to backend after favorites change
+    if (user?.email) {
+      await syncUserData({
+        user,
+        cart,
+        favoritesIds: next,
+        syncedAt: new Date().toISOString(),
+      }).catch(() => {});
+    }
   };
 
   const value = {

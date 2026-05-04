@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { Image, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { useShop } from "../context/ShopContext";
 import { getOrderById } from "../services/orders";
@@ -20,12 +20,23 @@ export function OrderDetailScreen({ route }) {
   const { gowns } = useShop();
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     const data = await getOrderById(orderId);
     setOrder(data || null);
     setLoading(false);
+  }, [orderId]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const data = await getOrderById(orderId);
+      setOrder(data || null);
+    } finally {
+      setRefreshing(false);
+    }
   }, [orderId]);
 
   useFocusEffect(
@@ -54,7 +65,11 @@ export function OrderDetailScreen({ route }) {
   const items = Array.isArray(order.items) ? order.items : [];
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+    <ScrollView 
+      style={styles.screen} 
+      contentContainerStyle={styles.content}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+    >
       <Text style={styles.title}>Order #{order.id}</Text>
       <Text style={styles.meta}>{formatDateTimePH(order.createdAt)}</Text>
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { useShop } from "../context/ShopContext";
 import { brand } from "../theme/brand";
@@ -18,6 +18,7 @@ function statusLabel(status) {
 export function MyOrdersScreen({ navigation }) {
   const { user, gowns } = useShop();
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [orders, setOrders] = useState([]);
   const [error, setError] = useState("");
 
@@ -36,6 +37,23 @@ export function MyOrdersScreen({ navigation }) {
       setError(e.message);
     } finally {
       setLoading(false);
+    }
+  }, [user?.email]);
+
+  const onRefresh = useCallback(async () => {
+    if (!user?.email) {
+      setRefreshing(false);
+      return;
+    }
+    setRefreshing(true);
+    try {
+      const data = await getOrdersByEmail(user.email);
+      setOrders(data || []);
+      setError("");
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setRefreshing(false);
     }
   }, [user?.email]);
 
@@ -61,7 +79,11 @@ export function MyOrdersScreen({ navigation }) {
   }
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+    <ScrollView 
+      style={styles.screen} 
+      contentContainerStyle={styles.content}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+    >
       <Text style={styles.title}>Order History</Text>
       <Text style={styles.hint}>Showing orders for {user.email}</Text>
       {loading ? <Text>Loading your orders...</Text> : null}

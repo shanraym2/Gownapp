@@ -1,8 +1,6 @@
 import { pushNotification } from "./notifications";
 import { normalizeId } from "../utils/id";
-
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || "https://plankton-app-blym2.ondigitalocean.app";
-const ADMIN_SECRET = process.env.EXPO_PUBLIC_ADMIN_SECRET || "qweqwe123";
+import { API_BASE_URL, adminAuthHeaders } from "../config/apiEnv";
 
 const STATUS_FLOW = ["placed", "paid", "processing", "shipped", "completed", "cancelled", "refunded"];
 const TRACKING_STATUS_FLOW = [
@@ -19,6 +17,18 @@ function makeUrl(path) {
   return `${String(API_BASE_URL).replace(/\/+$/, "")}${path}`;
 }
 
+function apiHostHint() {
+  try {
+    return new URL(String(API_BASE_URL).replace(/\/+$/, "") || "http://localhost").host;
+  } catch {
+    return API_BASE_URL || "API server";
+  }
+}
+
+async function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 function toMoney(value) {
   return `P${Number(value || 0).toLocaleString("en-PH")}`;
 }
@@ -31,7 +41,29 @@ function parseAmount(value) {
 }
 
 async function requestJson(path, options = {}) {
-  const response = await fetch(makeUrl(path), options);
+  const url = makeUrl(path);
+  // Add cache-control headers to ensure fresh data from server
+  const headers = {
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+    Pragma: "no-cache",
+    Expires: "0",
+    ...(options.headers || {}),
+  };
+  let response;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      response = await fetch(url, { ...options, headers });
+      break;
+    } catch (e) {
+      const lastTry = attempt === 2;
+      if (lastTry) {
+        throw new Error(
+          `Cannot reach ${apiHostHint()}: ${e?.message || "network error"}. Check internet/VPN and EXPO_PUBLIC_API_BASE_URL.`
+        );
+      }
+      await sleep(450 * (attempt + 1));
+    }
+  }
   let body = null;
   try {
     body = await response.json();
@@ -52,10 +84,7 @@ async function resolveBackendUser({ email, firstName, lastName, fullName }) {
     `${String(firstName || "").trim()} ${String(lastName || "").trim()}`.trim();
   const data = await requestJson("/api/mobile/ensure-user", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-admin-secret": ADMIN_SECRET,
-    },
+    headers: adminAuthHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ email: cleanEmail, name: resolvedName }),
   });
   const userId = String(data?.userId || "").trim();
@@ -68,8 +97,13 @@ function mapOrderForMobile(order) {
   const parts = contactName.split(/\s+/).filter(Boolean);
   const firstName = String(order?.contact?.firstName || parts[0] || "").trim();
   const lastName = String(order?.contact?.lastName || parts.slice(1).join(" ") || "").trim();
+  // Match web admin: only `proofStatus === 'pending'` counts as "proofs to review".
+  // Do not default null/empty to pending — that inflated counts vs /admin/orders.
+  const rawProofStatus = order?.proofStatus ?? order?.paymentProofStatus;
   const paymentProofStatus =
-    String(order?.proofStatus || order?.paymentProofStatus || "").trim().toLowerCase() || "pending";
+    rawProofStatus == null || rawProofStatus === ""
+      ? ""
+      : String(rawProofStatus).trim().toLowerCase();
   const paymentProofImage =
     String(order?.proofImageUrl || order?.paymentProof?.imageUri || "").trim() || "";
 
@@ -216,10 +250,14 @@ export async function getOrdersByEmail(email) {
 }
 
 export async function getAllOrdersAdmin() {
-  const data = await requestJson("/api/admin/orders", {
-    headers: { "x-admin-secret": ADMIN_SECRET },
-  });
-  return (Array.isArray(data?.orders) ? data.orders : []).map(mapOrderForMobile);
+  try {
+    const data = await requestJson("/api/admin/orders", {
+      headers: adminAuthHeaders(),
+    });
+    return (Array.isArray(data?.orders) ? data.orders : []).map(mapOrderForMobile);
+  } catch {
+    return [];
+  }
 }
 
 export async function getOrderById(orderId) {
@@ -271,10 +309,7 @@ export async function reviewOrderPaymentProofAdmin(orderId, payload) {
   try {
     await requestJson("/api/admin/orders", {
       method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        "x-admin-secret": ADMIN_SECRET,
-      },
+      headers: adminAuthHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({
         action: action === "verify" ? "verify-payment" : "reject-payment",
         orderId: normalizeId(orderId),
@@ -297,10 +332,7 @@ export async function updateOrderStatusAdmin(orderId, nextStatus) {
   try {
     await requestJson("/api/admin/orders", {
       method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        "x-admin-secret": ADMIN_SECRET,
-      },
+      headers: adminAuthHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({
         action: "status",
         orderId: normalizeId(orderId),

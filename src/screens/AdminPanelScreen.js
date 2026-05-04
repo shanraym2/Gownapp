@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { useShop } from "../context/ShopContext";
 import { canAccess } from "../utils/access";
@@ -7,6 +7,7 @@ import { getAllOrdersAdmin } from "../services/orders";
 import { getAllGownsAdmin } from "../services/gowns";
 import { deleteUserAdmin, listUsersAdmin } from "../services/authLocal";
 import { brand } from "../theme/brand";
+import { loadStoredAdminSecret, pingAdminApi, saveAdminSecret } from "../utils/adminCredentials";
 
 export function AdminPanelScreen({ navigation }) {
   const { user, logout } = useShop();
@@ -14,18 +15,31 @@ export function AdminPanelScreen({ navigation }) {
   const [orders, setOrders] = useState([]);
   const [gowns, setGowns] = useState([]);
   const [users, setUsers] = useState([]);
+  const [adminLive, setAdminLive] = useState(null);
+  const [secretModalOpen, setSecretModalOpen] = useState(false);
+  const [secretDraft, setSecretDraft] = useState("");
 
   const loadData = useCallback(async () => {
     setLoading(true);
-    const [ordersData, gownsData, usersData] = await Promise.all([
-      getAllOrdersAdmin(),
-      getAllGownsAdmin(),
-      listUsersAdmin(),
-    ]);
-    setOrders(Array.isArray(ordersData) ? ordersData : []);
-    setGowns(Array.isArray(gownsData) ? gownsData : []);
-    setUsers(Array.isArray(usersData) ? usersData : []);
-    setLoading(false);
+    try {
+      const [ordersData, gownsData, usersData] = await Promise.all([
+        getAllOrdersAdmin(),
+        getAllGownsAdmin(),
+        listUsersAdmin(),
+      ]);
+      setOrders(Array.isArray(ordersData) ? ordersData : []);
+      setGowns(Array.isArray(gownsData) ? gownsData : []);
+      setUsers(Array.isArray(usersData) ? usersData : []);
+    } catch (e) {
+      console.warn("AdminPanel loadData", e?.message || e);
+      setOrders([]);
+      setGowns([]);
+      setUsers([]);
+    } finally {
+      setLoading(false);
+    }
+    const ping = await pingAdminApi();
+    setAdminLive(ping.ok);
   }, []);
 
   useFocusEffect(
@@ -135,6 +149,22 @@ export function AdminPanelScreen({ navigation }) {
       <Text style={styles.title}>Dashboard</Text>
       <Text style={styles.subtitle}>Signed in as {user?.email || "-"}</Text>
 
+      {adminLive === false ? (
+        <Pressable
+          style={styles.syncBanner}
+          onPress={() => {
+            setSecretDraft("");
+            setSecretModalOpen(true);
+          }}
+        >
+          <Text style={styles.syncBannerTitle}>Live data not loading</Text>
+          <Text style={styles.syncBannerText}>
+            The admin secret on this device must match the one your deployed site uses (same as when you sign into the
+            web admin). Tap to enter it — no need to run npm run dev.
+          </Text>
+        </Pressable>
+      ) : null}
+
       <View style={styles.snapshotCard}>
         <Text style={styles.snapshotLabel}>SNAPSHOT</Text>
         <View style={styles.kpiRow}>
@@ -184,6 +214,44 @@ export function AdminPanelScreen({ navigation }) {
           <Text style={styles.emptyText}>No admin tools available for your role.</Text>
         </View>
       ) : null}
+
+      <Modal visible={secretModalOpen} animationType="fade" transparent onRequestClose={() => setSecretModalOpen(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Admin secret</Text>
+            <Text style={styles.modalHint}>
+              Use the exact same secret as your live site (DigitalOcean app env{" "}
+              <Text style={{ fontWeight: "700" }}>ADMIN_SECRET</Text>). You can also copy it from what you typed in the
+              browser admin login.
+            </Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Paste admin secret"
+              placeholderTextColor="#aaa"
+              value={secretDraft}
+              onChangeText={setSecretDraft}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <View style={styles.modalActions}>
+              <Pressable style={styles.modalCancel} onPress={() => setSecretModalOpen(false)}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={styles.modalSave}
+                onPress={async () => {
+                  await saveAdminSecret(secretDraft);
+                  await loadStoredAdminSecret();
+                  setSecretModalOpen(false);
+                  await loadData();
+                }}
+              >
+                <Text style={styles.modalSaveText}>Save & reload</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -193,6 +261,17 @@ const styles = StyleSheet.create({
   content: { padding: 16, paddingBottom: 30 },
   title: { fontSize: 36, fontWeight: "700", color: "#202020", fontStyle: "italic" },
   subtitle: { color: "#8a8a8a", fontSize: 12, marginTop: 4, marginBottom: 12 },
+
+  syncBanner: {
+    borderWidth: 1,
+    borderColor: "#e8d4a8",
+    backgroundColor: "#fffbf0",
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+  },
+  syncBannerTitle: { color: "#7a5200", fontWeight: "800", fontSize: 14, marginBottom: 4 },
+  syncBannerText: { color: "#6a5a40", fontSize: 12, lineHeight: 17 },
 
   snapshotCard: { borderWidth: 1, borderColor: "#e2e2e2", borderRadius: 10, backgroundColor: brand.white, padding: 12 },
   snapshotLabel: { color: "#9b9b9b", fontSize: 10, letterSpacing: 1.1, marginBottom: 8 },
@@ -225,5 +304,36 @@ const styles = StyleSheet.create({
 
   emptyWrap: { marginTop: 12, padding: 12, borderWidth: 1, borderColor: brand.border, backgroundColor: brand.white },
   emptyText: { color: brand.textLight, textAlign: "center", fontWeight: "800", fontSize: 12 },
+
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    justifyContent: "center",
+    padding: 20,
+  },
+  modalCard: {
+    backgroundColor: brand.white,
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#e2e2e2",
+  },
+  modalTitle: { fontSize: 18, fontWeight: "800", color: "#202020", marginBottom: 8 },
+  modalHint: { fontSize: 12, color: "#666", lineHeight: 17, marginBottom: 12 },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: "#202020",
+    marginBottom: 16,
+  },
+  modalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10 },
+  modalCancel: { paddingVertical: 10, paddingHorizontal: 14 },
+  modalCancelText: { color: "#666", fontWeight: "700", fontSize: 14 },
+  modalSave: { backgroundColor: "#4a2c82", borderRadius: 8, paddingVertical: 10, paddingHorizontal: 16 },
+  modalSaveText: { color: "#fff", fontWeight: "800", fontSize: 14 },
 });
 

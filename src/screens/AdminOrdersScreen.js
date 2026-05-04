@@ -200,7 +200,9 @@ export function AdminOrdersScreen() {
           <Text style={styles.pendingTitle}>⚠ {pendingProofOrders.length} orders awaiting proof review</Text>
           {pendingProofOrders.map((o) => (
             <View key={`pending-${o.id}`} style={styles.pendingRow}>
-              <Text style={styles.pendingId}>#{o.id}</Text>
+              <Text style={styles.pendingId}>
+                {(o.orderNumber || `JCE-${o.id}`)} · {o?.contact?.firstName || o?.contact?.email?.split("@")[0] || ""}
+              </Text>
               <Text style={styles.pendingAmount}>{money(o.total || o.subtotal)}</Text>
               <Pressable
                 style={styles.pendingReviewBtn}
@@ -264,7 +266,7 @@ export function AdminOrdersScreen() {
           }}
         >
           <View style={styles.orderRowTop}>
-            <Text style={[styles.cardTitle, styles.colOrder]} numberOfLines={1}>#{o.id}</Text>
+            <Text style={[styles.cardTitle, styles.colOrder]} numberOfLines={1}>{o.orderNumber || `JCE-${o.id}`}</Text>
             <Text style={[styles.meta, styles.colCustomer]} numberOfLines={1}>
               {o?.contact?.email || "-"}
             </Text>
@@ -315,8 +317,8 @@ export function AdminOrdersScreen() {
             <View style={styles.reviewHeader}>
               <View>
                 <Text style={styles.detailLabel}>PAYMENT PROOF</Text>
-                <Text style={styles.detailTitle}>#{reviewOrder?.id || "-"}</Text>
-                <Text style={styles.meta}>{money(reviewOrder?.total || reviewOrder?.subtotal)} • {prettyStatus(reviewOrder?.payment || "-")}</Text>
+                <Text style={styles.detailTitle}>{reviewOrder?.orderNumber || `JCE-${reviewOrder?.id || "-"}`}</Text>
+                <Text style={styles.meta}>{reviewOrder?.contact?.firstName} {reviewOrder?.contact?.lastName} • {money(reviewOrder?.total || reviewOrder?.subtotal)} • {prettyStatus(reviewOrder?.payment || "-")}</Text>
               </View>
               <Pressable style={styles.detailCloseTopBtn} onPress={() => setReviewOpen(false)}>
                 <Text style={styles.detailClose}>X</Text>
@@ -389,7 +391,7 @@ export function AdminOrdersScreen() {
             <View style={styles.detailHeader}>
               <View>
                 <Text style={styles.detailLabel}>ORDER</Text>
-                <Text style={styles.detailTitle}>#{selectedOrder?.id || "-"}</Text>
+                <Text style={styles.detailTitle}>{selectedOrder?.orderNumber || `JCE-${selectedOrder?.id || "-"}`}</Text>
                 <Text style={styles.meta}>{selectedOrder?.createdAt ? formatDateTimePH(selectedOrder.createdAt) : "-"}</Text>
               </View>
               <Pressable style={styles.detailCloseTopBtn} onPress={() => setDetailOpen(false)}>

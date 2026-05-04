@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { getOrderById } from "../services/orders";
 import { brand } from "../theme/brand";
+import { formatDateTimePH } from "../utils/datetime";
 
 function formatPrice(num) {
   return `P${Number(num || 0).toLocaleString("en-PH")}`;
@@ -62,7 +63,7 @@ export function OrderProofSubmittedScreen({ route, navigation }) {
         <Text style={styles.heroSub}>Thank you, friend. We've received your order.</Text>
         <View style={styles.orderCodeBox}>
           <Text style={styles.orderCodeLabel}>Order number</Text>
-          <Text style={styles.orderCodeValue}>JCE-{order.id}</Text>
+          <Text style={styles.orderCodeValue}>{order.orderNumber || `JCE-${order.id}`}</Text>
         </View>
       </View>
 
@@ -76,6 +77,30 @@ export function OrderProofSubmittedScreen({ route, navigation }) {
 
       <View style={styles.successCard}>
         <Text style={styles.successText}>Proof uploaded.</Text>
+      </View>
+
+      <View style={styles.proofDetailsCard}>
+        <Text style={styles.proofLabel}>PAYMENT PROOF</Text>
+        <Text style={styles.proofOrderNumber}>{order.orderNumber || `JCE-${order.id}`}</Text>
+        <Text style={styles.proofMeta}>
+          {order?.contact?.firstName} {order?.contact?.lastName} • {formatPrice(total)} • {paymentLabel(order.payment)}
+        </Text>
+        {order?.paymentProof?.referenceNumber ? (
+          <View style={styles.proofRow}>
+            <Text style={styles.meta}>Reference</Text>
+            <Text style={styles.value}>{order.paymentProof.referenceNumber}</Text>
+          </View>
+        ) : null}
+        {order?.paymentProof?.submittedAt ? (
+          <View style={styles.proofRow}>
+            <Text style={styles.meta}>Submitted</Text>
+            <Text style={styles.value}>{formatDateTimePH(order.paymentProof.submittedAt)}</Text>
+          </View>
+        ) : null}
+        <View style={styles.proofRow}>
+          <Text style={styles.meta}>Status</Text>
+          <Text style={styles.statusBadge}>Submitted - Pending Review</Text>
+        </View>
       </View>
 
       <View style={styles.summaryCard}>
@@ -127,6 +152,12 @@ const styles = StyleSheet.create({
   line: { color: brand.text, fontSize: 12, marginBottom: 5 },
   successCard: { borderWidth: 1, borderColor: "#c6d9ca", borderRadius: 8, backgroundColor: "#edf8ef", padding: 10 },
   successText: { color: "#2f7d53", fontWeight: "700", fontSize: 12 },
+  proofDetailsCard: { borderWidth: 1, borderColor: "#e8d9df", borderRadius: 8, backgroundColor: "#fef8f9", padding: 12, marginBottom: 12 },
+  proofLabel: { color: "#a89199", fontSize: 10, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.6 },
+  proofOrderNumber: { color: brand.dark, fontSize: 16, fontWeight: "800", marginTop: 3 },
+  proofMeta: { color: brand.textLight, fontSize: 12, marginTop: 4, marginBottom: 8 },
+  proofRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: "#f0e5eb" },
+  statusBadge: { color: "#7b5c66", backgroundColor: "#f0e5eb", borderRadius: 4, paddingHorizontal: 8, paddingVertical: 3, fontSize: 11, fontWeight: "700" },
   summaryCard: { borderWidth: 1, borderColor: brand.border, backgroundColor: brand.white, borderRadius: 12, padding: 12 },
   summaryTitle: { color: brand.dark, fontWeight: "800", marginBottom: 8 },
   row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 },

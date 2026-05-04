@@ -4,6 +4,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";
 import { getOrderById, submitOrderPaymentProof } from "../services/orders";
 import { brand } from "../theme/brand";
+import { formatDateTimePH } from "../utils/datetime";
 
 function formatPrice(num) {
   return `P${Number(num || 0).toLocaleString("en-PH")}`;
@@ -164,6 +165,33 @@ export function OrderPlacedScreen({ route, navigation }) {
         {hasSubmittedProof ? <Text style={styles.submittedText}>Payment proof submitted.</Text> : null}
       </View>
 
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Payment Proof Details</Text>
+        <View style={styles.proofDetailBox}>
+          <Text style={styles.proofLabel}>PAYMENT PROOF</Text>
+          <Text style={styles.proofOrderNumber}>{order.orderNumber || `JCE-${order.id}`}</Text>
+          <Text style={styles.proofMeta}>
+            {order?.contact?.firstName} {order?.contact?.lastName} • {formatPrice(order.total || order.subtotal)} • {paymentLabel(order.payment)}
+          </Text>
+        </View>
+        {order?.paymentProof?.referenceNumber ? (
+          <View style={styles.row}>
+            <Text style={styles.meta}>Reference Number</Text>
+            <Text style={styles.value}>{order.paymentProof.referenceNumber}</Text>
+          </View>
+        ) : null}
+        {order?.paymentProof?.submittedAt ? (
+          <View style={styles.row}>
+            <Text style={styles.meta}>Submitted</Text>
+            <Text style={styles.value}>{formatDateTimePH(order.paymentProof.submittedAt)}</Text>
+          </View>
+        ) : null}
+        <View style={styles.row}>
+          <Text style={styles.meta}>Status</Text>
+          <Text style={styles.statusBadge}>{hasSubmittedProof ? "Submitted - Pending Review" : "Not Submitted"}</Text>
+        </View>
+      </View>
+
       <View style={styles.summaryCard}>
         <Text style={styles.summaryTitle}>Order Summary</Text>
         {firstItem ? (
@@ -258,6 +286,11 @@ const styles = StyleSheet.create({
   value: { color: brand.dark, fontWeight: "600", fontSize: 12 },
   total: { color: brand.dark, fontWeight: "800", fontSize: 16 },
   badge: { color: "#4d3c42", backgroundColor: "#eee5e8", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2, fontSize: 11, fontWeight: "700" },
+  proofDetailBox: { backgroundColor: "#fef8f9", borderWidth: 1, borderColor: "#e8d9df", borderRadius: 8, padding: 10, marginBottom: 8 },
+  proofLabel: { color: "#a89199", fontSize: 10, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.6 },
+  proofOrderNumber: { color: brand.dark, fontSize: 16, fontWeight: "800", marginTop: 3 },
+  proofMeta: { color: brand.textLight, fontSize: 12, marginTop: 4 },
+  statusBadge: { color: "#7b5c66", backgroundColor: "#f0e5eb", borderRadius: 4, paddingHorizontal: 8, paddingVertical: 3, fontSize: 11, fontWeight: "700" },
   primaryBtn: { marginTop: 10, backgroundColor: brand.button, borderRadius: 8, paddingVertical: 12, paddingHorizontal: 18 },
   primaryBtnText: { color: brand.white, fontWeight: "700" },
   linkBtn: { paddingVertical: 2 },
